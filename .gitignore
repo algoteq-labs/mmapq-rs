@@ -1,0 +1,30 @@
+# Rust / Cargo
+/target/
+**/*.rs.bk
+
+# IDE
+.idea/
+.vscode/
+*.iml
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artefacts (C submodule, generated files)
+*.o
+*.a
+*.so
+*.dylib
+
+# Benchmark queue directories
+bench_queues/
+test_queues/
+
+# Python virtual env (if used for cross-validation scripts)
+.venv/
+__pycache__/
+*.pyc

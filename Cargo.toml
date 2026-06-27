@@ -1,0 +1,37 @@
+[package]
+name = "mmap-c-rs"
+version = "0.1.0"
+edition = "2021"
+description = "Idiomatic Rust bindings for mmap-c — low-latency shared-memory indexed queue"
+license = "MIT"
+
+[build-dependencies]
+cc = "1.0"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[lib]
+name = "mmap_c_rs"
+path = "src/lib.rs"
+
+[[example]]
+name = "echo_server"
+path = "examples/echo_server.rs"
+
+[[example]]
+name = "latency_bench"
+path = "examples/latency_bench.rs"
+
+[[example]]
+name = "batch_echo_server"
+path = "examples/batch_echo_server.rs"
+
+[[example]]
+name = "batch_latency_bench"
+path = "examples/batch_latency_bench.rs"
