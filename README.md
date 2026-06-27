@@ -2,7 +2,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Idiomatic Rust bindings for [mmap-c](https://github.com/algoteq/mmap-c)** — a low-latency,
+**Idiomatic Rust bindings for [mmap-c](https://github.com/algoteq-labs/mmap-c)** — a low-latency,
 memory-mapped, shared-memory indexed queue for inter-process messaging on Linux.
 
 ## Features
@@ -130,6 +130,11 @@ cargo run --release --example latency_bench -- 20000000 100000 64 5 7 9
 
 Without CPU isolation, expect P50 around 50–60 µs due to scheduling noise and cache
 migration. The measured minimum (min) value is the best indicator of raw path latency.
+
+## Acknowledgements
+
+`mmap-c-rs` is a Rust port of [Algoteq's mmap-c](https://github.com/algoteq-labs/mmap-c),
+which was originally derived from the [tools4j/mmap](https://github.com/tools4j/mmap) library.
 
 ## License
 
