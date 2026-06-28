@@ -1,28 +1,36 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::cell::Cell;
 
 use mmap_c_rs::{
-    batch::IndexedBatchQueue,
-    BatchNextMove, QueueConfig, Runtime,
+    batch::{IndexedBatchAppender, IndexedBatchQueue},
+    ffi, NextMove, QueueConfig, Runtime,
 };
 
 const SHUTDOWN_SEQ: u32 = 0;
 
-#[allow(dead_code)]
-#[repr(packed)]
-struct LatencyHeader {
-    instance_id: u16,
-    sequence: u32,
+fn pin_thread(cpu: i32) {
+    if cpu < 0 {
+        return;
+    }
+    let mut cpuset: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    unsafe { libc::CPU_SET(cpu as usize, &mut cpuset) };
+    let ret = unsafe {
+        libc::pthread_setaffinity_np(
+            libc::pthread_self(),
+            std::mem::size_of::<libc::cpu_set_t>(),
+            &cpuset as *const libc::cpu_set_t,
+        )
+    };
+    if ret != 0 {
+        eprintln!("Warning: failed to pin to core {} (errno: {})", cpu, ret);
+    }
 }
 
-fn parse_message(data: &[u8]) -> (u16, u32, &[u8]) {
-    let instance_id = u16::from_be_bytes([data[0], data[1]]);
-    let sequence = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
-    let payload = &data[6..];
-    (instance_id, sequence, payload)
-}
-
-fn make_config(dir: &str, name: &str, write_rt: Option<&Runtime>, read_rt: Option<&Runtime>) -> QueueConfig {
+fn make_config(
+    dir: &str,
+    name: &str,
+    write_rt: Option<&Runtime>,
+    read_rt: Option<&Runtime>,
+) -> QueueConfig {
     let mut cfg = QueueConfig::new(dir, name);
     if let Some(rt) = write_rt {
         cfg = cfg.write_runtime(rt);
@@ -46,6 +54,7 @@ fn main() {
     let dir = &args[1];
     let req_name = &args[2];
     let res_name = &args[3];
+    let cpu_core: i32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(-1);
     let mapper_cpu: i32 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(-1);
 
     let use_sync = args.iter().any(|a| a == "--sync" || a == "-s");
@@ -61,6 +70,12 @@ fn main() {
 
     println!("Batch Echo Server started...");
     println!("  Queues: {} -> {} ({})", req_name, res_name, mode_str);
+    if cpu_core >= 0 {
+        println!("  Core:   {}", cpu_core);
+    }
+    if !use_sync && mapper_cpu >= 0 {
+        println!("  Mapper: {}", mapper_cpu);
+    }
 
     let write_rt: Option<Runtime> = if use_sync {
         None
@@ -80,31 +95,45 @@ fn main() {
         write_rt.clone()
     };
 
+    pin_thread(cpu_core);
+
     let q_req = IndexedBatchQueue::create(make_config(dir, req_name, write_rt.as_ref(), read_rt.as_ref()))
         .expect("create request queue");
     let q_res = IndexedBatchQueue::create(make_config(dir, res_name, write_rt.as_ref(), read_rt.as_ref()))
         .expect("create response queue");
 
     let mut poller = q_req.create_poller().expect("create poller");
-    let mut appender = q_res.create_appender().expect("create appender");
+    let mut appender: IndexedBatchAppender = q_res.create_appender().expect("create appender");
 
-    let shutdown = Arc::new(AtomicBool::new(false));
-    let sd = Arc::clone(&shutdown);
+    let shutdown = Cell::new(false);
 
     println!("Waiting for requests...");
 
-    while !shutdown.load(Ordering::Acquire) {
+    while !shutdown.get() {
         let _result = poller
-            .poll(|_b_idx, _m_idx, _m_cnt, data| {
-                let (_inst, seq, _payload) = parse_message(data);
-                if seq == SHUTDOWN_SEQ {
-                    sd.store(true, Ordering::Release);
+            .poll(|_b_idx, ctx| {
+                // Advance to first message, check for shutdown
+                if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
+                    return NextMove::Advance;
                 }
-                // Echo the message as a new batch on the response queue
-                let mut batch = appender.start_batch().expect("start batch");
-                batch.append(data).expect("append to batch");
-                batch.commit().expect("commit batch");
-                BatchNextMove::Advance
+                let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
+                let data =
+                    unsafe { std::slice::from_raw_parts(ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8, len as usize) };
+
+                if data.len() >= 6 {
+                    let seq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                    if seq == SHUTDOWN_SEQ {
+                        shutdown.set(true);
+                    }
+                }
+
+                // Echo: append msg 0 manually, then append_remaining_from for msg 1..N
+                let mut writer = appender.start_batch().expect("start batch");
+                writer.append(data).expect("append msg 0");
+                writer.append_remaining_from(&mut ctx.batch_iterator);
+                writer.commit().expect("commit");
+
+                NextMove::Advance
             })
             .expect("poll failed");
     }

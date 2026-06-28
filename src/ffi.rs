@@ -16,12 +16,15 @@ pub enum IndexedBatchPoller {}
 pub enum IndexedBatchReader {}
 pub enum IndexedBatchArchiver {}
 pub enum MutableBatch {}
+// Size verified via GDB: 80 bytes (12 fields, 4 padding bytes total).
+// Layout: queue_name(8) + payload_acc(8) + payload_buf.data(8) +
+//         payload_buf.capacity(4) + batch_offset(8) + message_count(4) +
+//         current_msg_index(4) + current_msg_offset(8) + current_msg_length(4) +
+//         next_message_position(8) + exhausted(4) = 72 raw + 8 padding = 80.
 #[repr(C)]
 #[derive(Debug)]
 pub struct BatchPayloadIterator {
-    // Opaque — matched to C struct layout.
-    // Initialised by C library functions; never accessed from Rust.
-    _data: [u64; 16],
+    _data: [u64; 10], // 80 bytes
 }
 pub enum PayloadIterator {}
 pub enum UncommittedPayloadIterator {}
@@ -61,19 +64,6 @@ pub const ENTRY_END_OF_STREAM: c_int = 1;
 pub const ENTRY_ARCHIVED: c_int = 2;
 pub const ENTRY_ERROR: c_int = 3;
 
-pub const BATCH_ADVANCE: c_int = 0;
-pub const BATCH_ADVANCE_BATCH: c_int = 1;
-pub const BATCH_STOP: c_int = 2;
-pub const BATCH_RETREAT_BATCH: c_int = 3;
-
-pub const POLL_BATCH_END_OF_STREAM: c_int = 0;
-pub const POLL_BATCH_ADVANCED_MESSAGE: c_int = 1;
-pub const POLL_BATCH_ADVANCED_BATCH: c_int = 2;
-pub const POLL_BATCH_STOPPED: c_int = 3;
-pub const POLL_BATCH_RETREATED_BATCH: c_int = 4;
-pub const POLL_BATCH_ARCHIVED: c_int = 5;
-pub const POLL_BATCH_ERROR: c_int = 6;
-
 pub const BATCH_ENTRY_AVAILABLE: c_int = 0;
 pub const BATCH_ENTRY_END_OF_STREAM: c_int = 1;
 pub const BATCH_ENTRY_ARCHIVED: c_int = 2;
@@ -94,13 +84,10 @@ pub type MessageHandler = Option<
     ) -> c_int,
 >;
 
-pub type BatchMessageHandler = Option<
+pub type BatchHandler = Option<
     unsafe extern "C" fn(
         batch_index: i64,
-        message_index: i32,
-        message_count: i32,
-        data: *const c_void,
-        length: i32,
+        context: *mut BatchReadingContext,
         ctx: *mut c_void,
     ) -> c_int,
 >;
@@ -131,10 +118,10 @@ pub struct ReadingContext {
 #[derive(Debug)]
 pub struct BatchReadingContext {
     pub index: i64,
+    pub status: c_int,
     pub batch_offset: i64,
     pub message_count: i32,
     pub batch_iterator: BatchPayloadIterator,
-    pub status: c_int,
 }
 
 /* ── Runtime ──────────────────────────────────────────────────────────────── */
@@ -477,6 +464,12 @@ extern "C" {
         batch_offset: i64,
     );
 
+    pub fn indexed_batch_appender_append_and_commit(
+        a: *mut IndexedBatchAppender,
+        data: *const c_void,
+        length: i32,
+    ) -> i64;
+
     pub fn mutable_batch_complete(b: *mut MutableBatch) -> i64;
 
     pub fn mutable_batch_append(
@@ -527,19 +520,13 @@ extern "C" {
 
     pub fn indexed_batch_poller_poll(
         p: *mut IndexedBatchPoller,
-        handler: BatchMessageHandler,
+        handler: BatchHandler,
         ctx: *mut c_void,
     ) -> c_int;
 
     pub fn indexed_batch_poller_move_to_index(
         p: *mut IndexedBatchPoller,
         index: i64,
-    ) -> c_int;
-
-    pub fn indexed_batch_poller_move_to(
-        p: *mut IndexedBatchPoller,
-        batch_index: i64,
-        message_index: i32,
     ) -> c_int;
 
     pub fn indexed_batch_poller_move_to_end(p: *mut IndexedBatchPoller) -> c_int;
@@ -556,10 +543,6 @@ extern "C" {
         p: *const IndexedBatchPoller,
     ) -> i64;
 
-    pub fn indexed_batch_poller_current_message_index(
-        p: *const IndexedBatchPoller,
-    ) -> i32;
-
     pub fn indexed_batch_poller_start_index(
         p: *mut IndexedBatchPoller,
     ) -> i64;
@@ -567,7 +550,6 @@ extern "C" {
     pub fn indexed_batch_poller_exists(
         p: *mut IndexedBatchPoller,
         batch_index: i64,
-        message_index: i32,
     ) -> c_int;
 }
 
@@ -837,11 +819,11 @@ extern "C" {
 
     pub fn batch_iterator_has_current(it: *const BatchPayloadIterator) -> c_int;
 
-    pub fn batch_iterator_current_data(
+    pub fn batch_iterator_current_data_ffi(
         it: *const BatchPayloadIterator,
     ) -> *const c_void;
 
-    pub fn batch_iterator_current_length(
+    pub fn batch_iterator_current_length_ffi(
         it: *const BatchPayloadIterator,
     ) -> i32;
 }

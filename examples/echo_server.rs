@@ -1,15 +1,24 @@
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::cell::Cell;
 use mmap_c_rs::{IndexedQueue, NextMove, QueueConfig, Runtime};
 
 const SHUTDOWN_SEQ: u32 = 0;
 
-/// Wire format: [instance_id: u16][sequence: u32][payload: bytes]
-#[allow(dead_code)]
-#[repr(packed)]
-struct LatencyHeader {
-    instance_id: u16,
-    sequence: u32,
+fn pin_thread(cpu: i32) {
+    if cpu < 0 {
+        return;
+    }
+    let mut cpuset: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    unsafe { libc::CPU_SET(cpu as usize, &mut cpuset) };
+    let ret = unsafe {
+        libc::pthread_setaffinity_np(
+            libc::pthread_self(),
+            std::mem::size_of::<libc::cpu_set_t>(),
+            &cpuset as *const libc::cpu_set_t,
+        )
+    };
+    if ret != 0 {
+        eprintln!("Warning: failed to pin to core {} (errno: {})", cpu, ret);
+    }
 }
 
 fn parse_message(data: &[u8]) -> (u16, u32, &[u8]) {
@@ -43,6 +52,7 @@ fn main() {
     let dir = &args[1];
     let req_name = &args[2];
     let res_name = &args[3];
+    let cpu_core: i32 = args.get(4).and_then(|s| s.parse().ok()).unwrap_or(-1);
     let mapper_cpu: i32 = args.get(5).and_then(|s| s.parse().ok()).unwrap_or(-1);
 
     let use_sync = args.iter().any(|a| a == "--sync" || a == "-s");
@@ -58,7 +68,14 @@ fn main() {
 
     println!("Echo Server started...");
     println!("  Queues: {} -> {} ({})", req_name, res_name, mode_str);
+    if cpu_core >= 0 {
+        println!("  Core:   {}", cpu_core);
+    }
+    if !use_sync && mapper_cpu >= 0 {
+        println!("  Mapper: {}", mapper_cpu);
+    }
 
+    /* Spawn mapper BEFORE pinning main thread to prevent affinity inheritance */
     let write_rt: Option<Runtime> = if use_sync {
         None
     } else {
@@ -77,6 +94,9 @@ fn main() {
         write_rt.clone()
     };
 
+    /* Pin main thread AFTER spawning the mapper */
+    pin_thread(cpu_core);
+
     let q_req = IndexedQueue::create(make_config(dir, req_name, write_rt.as_ref(), read_rt.as_ref()))
         .expect("create request queue");
     let q_res = IndexedQueue::create(make_config(dir, res_name, write_rt.as_ref(), read_rt.as_ref()))
@@ -85,26 +105,21 @@ fn main() {
     let mut poller = q_req.create_poller().expect("create poller");
     let mut appender = q_res.create_appender().expect("create appender");
 
-    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown = Cell::new(false);
 
     println!("Waiting for requests...");
 
-    let sd = Arc::clone(&shutdown);
-    while !shutdown.load(Ordering::Acquire) {
+    while !shutdown.get() {
         let _result = poller
             .poll(|_idx, _aid, data| {
                 let (_inst, seq, _payload) = parse_message(data);
                 if seq == SHUTDOWN_SEQ {
-                    sd.store(true, Ordering::Release);
+                    shutdown.set(true);
                 }
-                // Echo the entire payload back
-                appender.append(data).expect("echo append failed");
+                appender.append(data).expect("echo append");
                 NextMove::Advance
             })
             .expect("poll failed");
-
-        // No delay — tight spin matching C echo_server behaviour.
-        // poll() returns immediately when there's no message.
     }
 
     println!("Shutdown requested. Closing...");

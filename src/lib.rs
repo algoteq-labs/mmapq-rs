@@ -68,7 +68,7 @@ pub mod transfer;
 
 pub use error::MmapError;
 pub use types::{
-    BatchEntryStatus, BatchNextMove, BatchPollResult, EntryStatus, NextMove, PollResult,
+    BatchEntryStatus, BatchPollResult, EntryStatus, NextMove, PollResult,
 };
 pub use runtime::{Runtime, RuntimeConfig, IdleStrategy};
 pub use queue::{IndexedQueue, QueueConfig};

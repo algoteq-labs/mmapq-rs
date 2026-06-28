@@ -1,12 +1,8 @@
-use std::cell::Cell;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use mmap_c_rs::{
-    batch::IndexedBatchQueue,
-    BatchNextMove, QueueConfig, Runtime,
-};
+use mmap_c_rs::batch::{IndexedBatchAppender, IndexedBatchPoller, IndexedBatchQueue};
+use mmap_c_rs::{ffi, NextMove, PollResult, QueueConfig, Runtime};
 
-/// Pin the current thread to the given CPU core.
 fn pin_thread(cpu: i32) {
     if cpu < 0 {
         return;
@@ -25,42 +21,105 @@ fn pin_thread(cpu: i32) {
     }
 }
 
+fn monotonic_nanos() -> u64 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts); }
+    ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+}
+
 const SHUTDOWN_SEQ: u32 = 0;
 
-#[allow(dead_code)]
 #[repr(packed)]
 struct LatencyHeader {
     instance_id: u16,
     sequence: u32,
 }
 
-fn make_message(instance_id: u16, sequence: u32, payload: &[u8]) -> Vec<u8> {
-    let hdr = LatencyHeader {
-        instance_id: instance_id.to_be(),
-        sequence: sequence.to_be(),
-    };
-    let hdr_bytes = unsafe {
-        std::slice::from_raw_parts(&hdr as *const LatencyHeader as *const u8, 6)
-    };
-    [hdr_bytes, payload].concat()
+struct BatchLatencyProbe {
+    msg_buffer: Vec<u8>,
+    instance_id: u16,
+    current_seq: u32,
+    _request_queue: IndexedBatchQueue,
+    _response_queue: IndexedBatchQueue,
+    request_appender: IndexedBatchAppender,
+    response_poller: IndexedBatchPoller,
+    response_received: AtomicBool,
 }
 
-fn parse_message(data: &[u8]) -> (u16, u32, &[u8]) {
-    let instance_id = u16::from_be_bytes([data[0], data[1]]);
-    let sequence = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
-    let payload = &data[6..];
-    (instance_id, sequence, payload)
-}
+impl BatchLatencyProbe {
+    fn create(instance_id: u16, msg_size: usize, dir: &str, write_rt: Option<&Runtime>, read_rt: Option<&Runtime>) -> Self {
+        let req_cfg = QueueConfig::new(dir, "batch_req");
+        let req_cfg = match write_rt { Some(rt) => req_cfg.write_runtime(rt), None => req_cfg };
+        let req_cfg = match read_rt { Some(rt) => req_cfg.read_runtime(rt), None => req_cfg };
+        let res_cfg = QueueConfig::new(dir, "batch_res");
+        let res_cfg = match write_rt { Some(rt) => res_cfg.write_runtime(rt), None => res_cfg };
+        let res_cfg = match read_rt { Some(rt) => res_cfg.read_runtime(rt), None => res_cfg };
 
-fn make_config(dir: &str, name: &str, write_rt: Option<&Runtime>, read_rt: Option<&Runtime>) -> QueueConfig {
-    let mut cfg = QueueConfig::new(dir, name);
-    if let Some(rt) = write_rt {
-        cfg = cfg.write_runtime(rt);
+        let q_req = IndexedBatchQueue::create(req_cfg).expect("create request queue");
+        let q_res = IndexedBatchQueue::create(res_cfg).expect("create response queue");
+        let appender = q_req.create_appender().expect("create appender");
+        let mut poller = q_res.create_poller().expect("create poller");
+        poller.move_to_end();
+
+        Self {
+            msg_buffer: vec![0u8; msg_size],
+            instance_id,
+            current_seq: 0,
+            _request_queue: q_req,
+            _response_queue: q_res,
+            request_appender: appender,
+            response_poller: poller,
+            response_received: AtomicBool::new(false),
+        }
     }
-    if let Some(rt) = read_rt {
-        cfg = cfg.read_runtime(rt);
+
+    fn execute(&mut self) -> u64 {
+        self.response_received.store(false, Ordering::Relaxed);
+        self.current_seq += 1;
+
+        let hdr = unsafe { &mut *(self.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
+        hdr.instance_id = self.instance_id.to_be();
+        hdr.sequence = self.current_seq.to_be();
+
+        let start = monotonic_nanos();
+
+        let mut batch = self.request_appender.start_batch().expect("start batch");
+        batch.append(&self.msg_buffer).expect("batch append");
+        batch.commit().expect("batch commit");
+
+        let poller = &mut self.response_poller;
+        let received = &self.response_received;
+        let my_id = self.instance_id;
+        let my_seq = self.current_seq;
+
+        while !received.load(Ordering::Relaxed) {
+            let _ = poller.poll(|_b_idx, ctx| {
+                if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
+                    return NextMove::Advance;
+                }
+                let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
+                if len >= 6 {
+                    let data = unsafe {
+                        std::slice::from_raw_parts(
+                            ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
+                            len as usize,
+                        )
+                    };
+                    let rid = u16::from_be_bytes([data[0], data[1]]);
+                    let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                    if rid == my_id && rseq == my_seq {
+                        received.store(true, Ordering::Relaxed);
+                    }
+                }
+                NextMove::Advance
+            });
+        }
+
+        monotonic_nanos() - start
     }
-    cfg
 }
 
 fn format_duration(ns: u64) -> String {
@@ -116,7 +175,6 @@ fn main() {
         eprintln!("  options: --external  External server mode");
         eprintln!("           --sync     Synchronous mode (no mapper runtime)");
         eprintln!("           --mixed    Mixed mode (async write, sync read)");
-        eprintln!("           --bench    Machine-readable output for regression tracking");
         eprintln!("           --dir <d>  Queue base directory (default: /tmp)");
         std::process::exit(1);
     }
@@ -157,9 +215,6 @@ fn main() {
     println!("  Config: Iterations={}, Warmup={}, MsgSize={}", iterations, warmup, msg_size);
     println!("  Mode:   {} ({})", if external_server { "EXTERNAL SERVER" } else { "INTERNAL SERVER" }, mode_str);
 
-    let name_req = "batch_req";
-    let name_res = "batch_res";
-
     let write_rt: Option<Runtime> = if use_sync {
         None
     } else {
@@ -178,139 +233,139 @@ fn main() {
         write_rt.clone()
     };
 
-    // ── Start internal server thread ──────────────────────────────────────
     if !external_server {
         let s_dir = dir.clone();
         let s_wrt = write_rt.clone();
         let s_rdt = read_rt.clone();
         std::thread::spawn(move || {
             pin_thread(server_cpu);
-            internal_server(&s_dir, name_req, name_res, s_wrt, s_rdt);
+            internal_server(&s_dir, s_wrt, s_rdt);
         });
-        std::thread::sleep(Duration::from_millis(200));
+        std::thread::sleep(std::time::Duration::from_millis(200));
         println!("  Internal Batch Server started (core {})",
             if server_cpu >= 0 { format!("{}", server_cpu) } else { "any".into() });
     }
 
-    // ── Create queues ─────────────────────────────────────────────────────
-    let req_cfg = make_config(&dir, name_req, write_rt.as_ref(), read_rt.as_ref());
-    let res_cfg = make_config(&dir, name_res, write_rt.as_ref(), read_rt.as_ref());
-
-    let q_req = IndexedBatchQueue::create(req_cfg).expect("create request queue");
-    let q_res = IndexedBatchQueue::create(res_cfg).expect("create response queue");
-
-    let mut appender = q_req.create_appender().expect("create appender");
-    let mut poller = q_res.create_poller().expect("create poller");
-    // Move to end to skip any stale messages
-    poller.move_to_end();
+    let mut probe = BatchLatencyProbe::create(1, msg_size, &dir, write_rt.as_ref(), read_rt.as_ref());
 
     pin_thread(client_cpu);
 
-    let payload = vec![b'B' as u8; msg_size];
-    let instance_id: u16 = 1;
-
-    // ── Warmup ────────────────────────────────────────────────────────────
     println!("Warming up...");
-    for seq in 1..=warmup {
-        let msg = make_message(instance_id, seq as u32, &payload);
-        let mut batch = appender.start_batch().expect("start batch");
-        batch.append(&msg).expect("batch append");
-        batch.commit().expect("batch commit");
-
-        loop {
-            if let mmap_c_rs::BatchPollResult::AdvancedBatch | mmap_c_rs::BatchPollResult::AdvancedMessage = poller
-                .poll(|_b_idx, _m_idx, _m_cnt, _data| BatchNextMove::AdvanceBatch)
-                .expect("warmup poll")
-            {
-                break;
-            }
-        }
+    for _ in 0..warmup {
+        probe.execute();
     }
 
-    // ── Measure ───────────────────────────────────────────────────────────
     println!("Measuring...");
     let mut results = vec![0u64; iterations as usize];
-    results.fill(0);
 
-    let start_bench = Instant::now();
-
+    let start_bench = monotonic_nanos();
     for i in 0..iterations {
-        let seq = i + 1 + warmup;
-        let msg = make_message(instance_id, seq as u32, &payload);
-        let t0 = Instant::now();
-
-        let mut batch = appender.start_batch().expect("start batch");
-        batch.append(&msg).expect("batch append");
-        batch.commit().expect("batch commit");
-
-        loop {
-            if let mmap_c_rs::BatchPollResult::AdvancedBatch | mmap_c_rs::BatchPollResult::AdvancedMessage = poller
-                .poll(|_b_idx, _m_idx, _m_cnt, _data| BatchNextMove::AdvanceBatch)
-                .expect("measure poll")
-            {
-                break;
-            }
-        }
-
-        let t1 = Instant::now();
-        results[i as usize] = t1.duration_since(t0).as_nanos() as u64;
+        results[i as usize] = probe.execute();
     }
+    let end_bench = monotonic_nanos();
 
-    let elapsed_ns = start_bench.elapsed().as_nanos() as u64;
+    print_stats(&results, end_bench - start_bench, "Batch Round-Trip Latency Statistics (nanoseconds):");
 
-    print_stats(&results, elapsed_ns, "Batch Round-Trip Latency Statistics (nanoseconds):");
+    send_shutdown(&mut probe);
+}
 
-    // ── Send shutdown ────────────────────────────────────────────────────
-    let shutdown_msg = make_message(instance_id, SHUTDOWN_SEQ, &[]);
-    let mut batch = appender.start_batch().expect("shutdown start batch");
-    batch.append(&shutdown_msg).expect("shutdown append");
+fn send_shutdown(probe: &mut BatchLatencyProbe) {
+    probe.response_received.store(false, Ordering::Relaxed);
+    let saved_seq = probe.current_seq;
+    probe.current_seq = SHUTDOWN_SEQ;
+
+    let hdr = unsafe { &mut *(probe.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
+    hdr.instance_id = probe.instance_id.to_be();
+    hdr.sequence = SHUTDOWN_SEQ.to_be();
+
+    let mut batch = probe.request_appender.start_batch().expect("shutdown start batch");
+    batch.append(&probe.msg_buffer).expect("shutdown append");
     batch.commit().expect("shutdown commit");
 
-    drop(appender);
-    drop(poller);
-    drop(q_req);
-    drop(q_res);
+    let timeout_at = monotonic_nanos() + 2_000_000_000;
+    let poller = &mut probe.response_poller;
+    let received = &probe.response_received;
+    while !received.load(Ordering::Relaxed) && monotonic_nanos() < timeout_at {
+        let _ = poller.poll(|_b_idx, ctx| {
+            if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
+                return NextMove::Advance;
+            }
+            let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
+            if len >= 6 {
+                let data = unsafe {
+                    std::slice::from_raw_parts(
+                        ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
+                        len as usize,
+                    )
+                };
+                let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                if rseq == SHUTDOWN_SEQ {
+                    received.store(true, Ordering::Relaxed);
+                }
+            }
+            NextMove::Advance
+        });
+    }
+
+    probe.current_seq = saved_seq;
 }
 
 /// Internal batch echo server thread.
-fn internal_server(
-    dir: &str,
-    req_name: &str,
-    res_name: &str,
-    write_rt: Option<Runtime>,
-    read_rt: Option<Runtime>,
-) {
-    let q_req =
-        IndexedBatchQueue::create(make_config(dir, req_name, write_rt.as_ref(), read_rt.as_ref()))
-            .expect("server: create request queue");
-    let q_res =
-        IndexedBatchQueue::create(make_config(dir, res_name, write_rt.as_ref(), read_rt.as_ref()))
-            .expect("server: create response queue");
+fn internal_server(dir: &str, write_rt: Option<Runtime>, read_rt: Option<Runtime>) {
+    let req_cfg = QueueConfig::new(dir, "batch_req");
+    let req_cfg = match write_rt.as_ref() { Some(rt) => req_cfg.write_runtime(rt), None => req_cfg };
+    let req_cfg = match read_rt.as_ref() { Some(rt) => req_cfg.read_runtime(rt), None => req_cfg };
+    let res_cfg = QueueConfig::new(dir, "batch_res");
+    let res_cfg = match write_rt.as_ref() { Some(rt) => res_cfg.write_runtime(rt), None => res_cfg };
+    let res_cfg = match read_rt.as_ref() { Some(rt) => res_cfg.read_runtime(rt), None => res_cfg };
+
+    let q_req = IndexedBatchQueue::create(req_cfg).expect("server: create request queue");
+    let q_res = IndexedBatchQueue::create(res_cfg).expect("server: create response queue");
 
     let mut poller = q_req.create_poller().expect("server: create poller");
     let mut appender = q_res.create_appender().expect("server: create appender");
 
-    let shutdown = Cell::new(false);
+    let shutdown = std::cell::Cell::new(false);
     loop {
-        let _result = poller
-            .poll(|_b_idx, _m_idx, _m_cnt, data| {
-                let (_inst, seq, _payload) = parse_message(data);
-                if seq == SHUTDOWN_SEQ {
-                    shutdown.set(true);
+        let result = poller
+            .poll(|_b_idx, ctx| {
+                // Advance to msg 0, check for shutdown
+                if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
+                    return NextMove::Advance;
                 }
-                // Echo the message as a new batch on the response queue
-                let mut b = appender.start_batch().expect("server: start batch");
-                b.append(data).expect("server: append");
-                b.commit().expect("server: commit");
-                BatchNextMove::Advance
-            })
-            .expect("server: poll");
+                let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
+                let data = unsafe {
+                    std::slice::from_raw_parts(
+                        ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
+                        len as usize,
+                    )
+                };
+                if len >= 6 {
+                    let seq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                    if seq == SHUTDOWN_SEQ {
+                        shutdown.set(true);
+                    }
+                }
+
+                // Approach B: manually append msg 0, then append_remaining_from for msg 1..N
+                let mut writer = appender.start_batch().expect("server: start batch");
+                writer.append(data).expect("server: append msg 0");
+                writer.append_remaining_from(&mut ctx.batch_iterator);
+                writer.commit().expect("server: commit");
+
+                NextMove::Advance
+            });
 
         if shutdown.get() {
             break;
         }
 
-        // No delay — tight spin. poll() returns immediately when empty.
+        match result {
+            Ok(PollResult::EndOfStream) => {
+                core::hint::spin_loop();
+            }
+            _ => {}
+        }
     }
 
     drop(appender);

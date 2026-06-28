@@ -114,17 +114,15 @@ fn test_rust_client_c_batch_echo_server() {
     std::fs::create_dir_all(&dir).expect("create dir");
     let dir_str = dir.to_str().unwrap();
 
-    // Build batch_echo_server
+    // Build batch_echo_server (always rebuild to avoid stale binaries)
     let c_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("c");
     let batch_server = c_dir.join("batch_echo_server");
-    if !batch_server.exists() {
-        let status = Command::new("make")
-            .args(["batch_echo_server"])
-            .current_dir(&c_dir)
-            .status()
-            .expect("make batch_echo_server failed");
-        assert!(status.success(), "make batch_echo_server failed");
-    }
+    let status = Command::new("make")
+        .args(["batch_echo_server"])
+        .current_dir(&c_dir)
+        .status()
+        .expect("make batch_echo_server failed");
+    assert!(status.success(), "make batch_echo_server failed");
 
     let mut server = Command::new(&batch_server)
         .args([dir_str, "breq", "bres", "-1", "-1", "--sync"])
@@ -157,7 +155,17 @@ fn test_rust_client_c_batch_echo_server() {
     for _ in 0..50 {
         loop {
             let result = poller
-                .poll(|_bi, _mi, _mc, data| {
+                .poll(|_b_idx, ctx| {
+                    if unsafe { mmap_c_rs::ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
+                        return NextMove::Advance;
+                    }
+                    let len = unsafe { mmap_c_rs::ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
+                    let data = unsafe {
+                        std::slice::from_raw_parts(
+                            mmap_c_rs::ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
+                            len as usize,
+                        )
+                    };
                     let s = String::from_utf8_lossy(data);
                     assert!(
                         s.starts_with("batch-"),
@@ -165,13 +173,13 @@ fn test_rust_client_c_batch_echo_server() {
                         s
                     );
                     received += 1;
-                    mmap_c_rs::BatchNextMove::AdvanceBatch
+                    NextMove::Advance
                 })
                 .expect("poll");
-            if result == mmap_c_rs::BatchPollResult::AdvancedBatch {
+            if result == PollResult::Advanced {
                 break;
             }
-            if result == mmap_c_rs::BatchPollResult::EndOfStream {
+            if result == PollResult::EndOfStream {
                 std::thread::sleep(Duration::from_micros(100));
             }
         }

@@ -9,7 +9,7 @@
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PollResult {
-    /// No message at the current index. The polelr will retry on the next call.
+    /// No message at the current index. The poller will retry on the next call.
     EndOfStream = 0,
     /// A message was processed and the cursor advanced to the next index.
     Advanced = 1,
@@ -77,68 +77,10 @@ pub enum EntryStatus {
     Error = 3,
 }
 
-/// Direction returned by the batch poll handler.
-///
-/// Mirrors the C `BatchNextMove` enum.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BatchNextMove {
-    /// Advance to the next message within the current batch.
-    Advance = 0,
-    /// Skip to the next batch entirely.
-    AdvanceBatch = 1,
-    /// Stay at the current message.
-    Stop = 2,
-    /// Move back to the previous batch.
-    RetreatBatch = 3,
-}
-
-impl From<BatchNextMove> for i32 {
-    fn from(m: BatchNextMove) -> i32 {
-        m as i32
-    }
-}
-
 /// Result of a single `IndexedBatchPoller::poll()` call.
 ///
-/// Mirrors the C `BatchPollResult` enum.
-#[repr(C)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BatchPollResult {
-    /// No batch is available at the current index.
-    EndOfStream = 0,
-    /// One message within the current batch was processed and the cursor
-    /// advanced to the next message (handler returned `BatchNextMove::Advance`).
-    AdvancedMessage = 1,
-    /// The batch ended or the handler returned `BatchNextMove::AdvanceBatch`;
-    /// cursor moved to the next batch.
-    AdvancedBatch = 2,
-    /// The handler returned `BatchNextMove::Stop`; cursor held.
-    Stopped = 3,
-    /// The handler returned `BatchNextMove::RetreatBatch`; cursor moved to
-    /// the previous batch.
-    RetreatedBatch = 4,
-    /// The batch at the current index has been archived.
-    Archived = 5,
-    /// A mapping timeout or I/O error occurred.
-    Error = 6,
-}
-
-impl BatchPollResult {
-    /// Convert a raw `i32` from the C library to a `BatchPollResult`.
-    pub fn from_ffi(val: i32) -> Self {
-        match val {
-            0 => BatchPollResult::EndOfStream,
-            1 => BatchPollResult::AdvancedMessage,
-            2 => BatchPollResult::AdvancedBatch,
-            3 => BatchPollResult::Stopped,
-            4 => BatchPollResult::RetreatedBatch,
-            5 => BatchPollResult::Archived,
-            6 => BatchPollResult::Error,
-            _ => BatchPollResult::Error,
-        }
-    }
-}
+/// Alias for `PollResult`, matching C's `typedef PollResult BatchPollResult`.
+pub type BatchPollResult = PollResult;
 
 /// Availability of a batch entry at a given index.
 ///

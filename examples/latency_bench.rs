@@ -1,10 +1,7 @@
-use std::cell::Cell;
-use std::time::{Duration, Instant};
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use mmap_c_rs::{IndexedQueue, NextMove, PollResult, QueueConfig, Runtime};
+use mmap_c_rs::{IndexedAppender, IndexedPoller, IndexedQueue, NextMove, PollResult, QueueConfig, Runtime};
 
-#[allow(dead_code)]
-/// Pin the current thread to the given CPU core.
 fn pin_thread(cpu: i32) {
     if cpu < 0 {
         return;
@@ -23,42 +20,94 @@ fn pin_thread(cpu: i32) {
     }
 }
 
+fn monotonic_nanos() -> u64 {
+    let mut ts = libc::timespec {
+        tv_sec: 0,
+        tv_nsec: 0,
+    };
+    unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts); }
+    ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
+}
+
 const SHUTDOWN_SEQ: u32 = 0;
 
-#[allow(dead_code)]
 #[repr(packed)]
 struct LatencyHeader {
     instance_id: u16,
     sequence: u32,
 }
 
-fn make_message(instance_id: u16, sequence: u32, payload: &[u8]) -> Vec<u8> {
-    let hdr = LatencyHeader {
-        instance_id: instance_id.to_be(),
-        sequence: sequence.to_be(),
-    };
-    let hdr_bytes = unsafe {
-        std::slice::from_raw_parts(&hdr as *const LatencyHeader as *const u8, 6)
-    };
-    [hdr_bytes, payload].concat()
+struct LatencyProbe {
+    msg_buffer: Vec<u8>,
+    instance_id: u16,
+    current_seq: u32,
+    _request_queue: IndexedQueue,
+    _response_queue: IndexedQueue,
+    request_appender: IndexedAppender,
+    response_poller: IndexedPoller,
+    response_received: AtomicBool,
 }
 
-fn parse_message(data: &[u8]) -> (u16, u32, &[u8]) {
-    let instance_id = u16::from_be_bytes([data[0], data[1]]);
-    let sequence = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
-    let payload = &data[6..];
-    (instance_id, sequence, payload)
-}
+impl LatencyProbe {
+    fn create(instance_id: u16, msg_size: usize, dir: &str, write_rt: Option<&Runtime>, read_rt: Option<&Runtime>) -> Self {
+        let req_cfg = QueueConfig::new(dir, "request");
+        let req_cfg = match write_rt { Some(rt) => req_cfg.write_runtime(rt), None => req_cfg };
+        let req_cfg = match read_rt { Some(rt) => req_cfg.read_runtime(rt), None => req_cfg };
+        let res_cfg = QueueConfig::new(dir, "response");
+        let res_cfg = match write_rt { Some(rt) => res_cfg.write_runtime(rt), None => res_cfg };
+        let res_cfg = match read_rt { Some(rt) => res_cfg.read_runtime(rt), None => res_cfg };
 
-fn make_config(dir: &str, name: &str, write_rt: Option<&Runtime>, read_rt: Option<&Runtime>) -> QueueConfig {
-    let mut cfg = QueueConfig::new(dir, name);
-    if let Some(rt) = write_rt {
-        cfg = cfg.write_runtime(rt);
+        let q_req = IndexedQueue::create(req_cfg).expect("create request queue");
+        let q_res = IndexedQueue::create(res_cfg).expect("create response queue");
+        let appender = q_req.create_appender().expect("create appender");
+        let mut poller = q_res.create_poller().expect("create poller");
+        poller.move_to_end();
+
+        Self {
+            msg_buffer: vec![0u8; msg_size],
+            instance_id,
+            current_seq: 0,
+            _request_queue: q_req,
+            _response_queue: q_res,
+            request_appender: appender,
+            response_poller: poller,
+            response_received: AtomicBool::new(false),
+        }
     }
-    if let Some(rt) = read_rt {
-        cfg = cfg.read_runtime(rt);
+
+    fn execute(&mut self) -> u64 {
+        self.response_received.store(false, Ordering::Relaxed);
+        self.current_seq += 1;
+
+        let hdr = unsafe { &mut *(self.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
+        hdr.instance_id = self.instance_id.to_be();
+        hdr.sequence = self.current_seq.to_be();
+
+        let start = monotonic_nanos();
+
+        self.request_appender.append(&self.msg_buffer).expect("append");
+
+        let poller = &mut self.response_poller;
+        let received = &self.response_received;
+        let my_id = self.instance_id;
+        let my_seq = self.current_seq;
+
+        while !received.load(Ordering::Relaxed) {
+            let _ = poller.poll(|_idx, _aid, data| {
+                if data.len() >= 6 {
+                    let rid = u16::from_be_bytes([data[0], data[1]]);
+                    let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                    if rid == my_id && rseq == my_seq {
+                        received.store(true, Ordering::Relaxed);
+                    }
+                }
+                NextMove::Advance
+            });
+        }
+
+        monotonic_nanos() - start
     }
-    cfg
+
 }
 
 fn format_duration(ns: u64) -> String {
@@ -111,7 +160,7 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     if args.len() < 2 {
         eprintln!("usage: {} <iterations> <warmup> <msg_size> [client_cpu] [server_cpu] [mapper_cpu] [options]", args[0]);
-        eprintln!("  options: --external  External server mode (spawn echo_server)");
+        eprintln!("  options: --external  External server mode");
         eprintln!("           --sync     Synchronous mode (no mapper runtime)");
         eprintln!("           --mixed    Mixed mode (async write, sync read)");
         eprintln!("           --bench    Machine-readable output for regression tracking");
@@ -157,10 +206,6 @@ fn main() {
     println!("  Config: Iterations={}, Warmup={}, MsgSize={}", iterations, warmup, msg_size);
     println!("  Mode:   {} ({})", if external_server { "EXTERNAL SERVER" } else { "INTERNAL SERVER" }, mode_str);
 
-    let name_req = "request";
-    let name_res = "response";
-
-    // ── Runtime setup ────────────────────────────────────────────────────
     let write_rt: Option<Runtime> = if use_sync {
         None
     } else {
@@ -179,85 +224,36 @@ fn main() {
         write_rt.clone()
     };
 
-    // ── Start internal server thread ──────────────────────────────────────
     if !external_server {
         let s_dir = dir.clone();
         let s_wrt = write_rt.clone();
         let s_rdt = read_rt.clone();
         std::thread::spawn(move || {
             pin_thread(server_cpu);
-            internal_server(&s_dir, name_req, name_res, s_wrt, s_rdt);
+            internal_server(&s_dir, s_wrt, s_rdt);
         });
-        std::thread::sleep(Duration::from_millis(100));
+        std::thread::sleep(std::time::Duration::from_millis(100));
         println!("  Internal Server started (core {})", if server_cpu >= 0 { format!("{}", server_cpu) } else { "any".into() });
     }
 
-    // ── Create probe: request appender + response poller ──────────────────
-    let req_cfg = make_config(&dir, name_req, write_rt.as_ref(), read_rt.as_ref());
-    let res_cfg = make_config(&dir, name_res, write_rt.as_ref(), read_rt.as_ref());
+    let mut probe = LatencyProbe::create(1, msg_size, &dir, write_rt.as_ref(), read_rt.as_ref());
 
-    let q_req = IndexedQueue::create(req_cfg).expect("create request queue");
-    let q_res = IndexedQueue::create(res_cfg).expect("create response queue");
-
-    let mut appender = q_req.create_appender().expect("create appender");
-    let mut poller = q_res.create_poller().expect("create poller");
-
-    // Move to end to skip any stale messages
-    poller.move_to_end();
-
-    // Pin client thread to its core (after runtime creation to prevent inheritance)
     pin_thread(client_cpu);
 
-    let payload = vec![b'A' as u8; msg_size];
-    let instance_id: u16 = 1;
-
-    // ── Warmup ────────────────────────────────────────────────────────────
     println!("Warming up...");
-    for seq in 1..=warmup {
-        let msg = make_message(instance_id, seq as u32, &payload);
-        appender.append(&msg).expect("warmup append");
-        loop {
-            let done = poller
-                .poll(|_idx, _aid, _data| NextMove::Advance)
-                .expect("warmup poll");
-            if done == PollResult::Advanced {
-                break;
-            }
-            std::thread::yield_now();
-        }
+    for _ in 0..warmup {
+        probe.execute();
     }
 
-    // ── Measure ───────────────────────────────────────────────────────────
-    // Start timing AFTER append, matching C benchmark methodology.
     println!("Measuring...");
     let mut results = vec![0u64; iterations as usize];
-    results.fill(0);
 
-    let start_bench = Instant::now();
-
+    let start_bench = monotonic_nanos();
     for i in 0..iterations {
-        let seq = (i + 1) as u32;
-        let msg = make_message(instance_id, seq, &payload);
-        appender.append(&msg).expect("measure append");
-
-        let t0 = Instant::now();
-        loop {
-            let done = poller
-                .poll(|_idx, _aid, _data| NextMove::Advance)
-                .expect("measure poll");
-            if done == PollResult::Advanced {
-                break;
-            }
-            std::thread::yield_now();
-        }
-        let t1 = Instant::now();
-        results[i as usize] = t1.duration_since(t0).as_nanos() as u64;
+        results[i as usize] = probe.execute();
     }
+    let end_bench = monotonic_nanos();
 
-    let end_bench = Instant::now();
-    let elapsed_ns = end_bench.duration_since(start_bench).as_nanos() as u64;
-
-    // ── Print statistics ─────────────────────────────────────────────────
     if bench_mode {
         let total: u64 = results.iter().sum();
         let mean = total as f64 / results.len() as f64;
@@ -268,56 +264,79 @@ fn main() {
         println!("BENCH: iterations={} mean={:.1} p50={} p99={} min={} max={}",
             results.len(), mean, p50, p99, sorted[0], sorted[sorted.len()-1]);
     } else {
-        print_stats(&results, elapsed_ns, "Round-Trip Latency Statistics (nanoseconds):");
+        print_stats(&results, end_bench - start_bench, "Round-Trip Latency Statistics (nanoseconds):");
     }
 
-    // ── Send shutdown ────────────────────────────────────────────────────
-    let shutdown_msg = make_message(instance_id, SHUTDOWN_SEQ, &[]);
-    appender.append(&shutdown_msg).expect("shutdown append");
+    send_shutdown(&mut probe);
+}
 
-    drop(appender);
-    drop(poller);
-    drop(q_req);
-    drop(q_res);
+fn send_shutdown(probe: &mut LatencyProbe) {
+    probe.response_received.store(false, Ordering::Relaxed);
+    let saved_seq = probe.current_seq;
+    probe.current_seq = SHUTDOWN_SEQ;
+
+    let hdr = unsafe { &mut *(probe.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
+    hdr.instance_id = probe.instance_id.to_be();
+    hdr.sequence = SHUTDOWN_SEQ.to_be();
+
+    probe.request_appender.append(&probe.msg_buffer).expect("shutdown append");
+
+    let timeout_at = monotonic_nanos() + 2_000_000_000;
+    let poller = &mut probe.response_poller;
+    let received = &probe.response_received;
+    while !received.load(Ordering::Relaxed) && monotonic_nanos() < timeout_at {
+        let _ = poller.poll(|_idx, _aid, data| {
+            if data.len() >= 6 {
+                let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                if rseq == SHUTDOWN_SEQ {
+                    received.store(true, Ordering::Relaxed);
+                }
+            }
+            NextMove::Advance
+        });
+    }
+
+    probe.current_seq = saved_seq;
 }
 
 /// Internal echo server thread: reads from request queue, echoes to response queue.
-fn internal_server(
-    dir: &str,
-    req_name: &str,
-    res_name: &str,
-    write_rt: Option<Runtime>,
-    read_rt: Option<Runtime>,
-) {
-    let q_req =
-        IndexedQueue::create(make_config(dir, req_name, write_rt.as_ref(), read_rt.as_ref()))
-            .expect("server: create request queue");
-    let q_res =
-        IndexedQueue::create(make_config(dir, res_name, write_rt.as_ref(), read_rt.as_ref()))
-            .expect("server: create response queue");
+fn internal_server(dir: &str, write_rt: Option<Runtime>, read_rt: Option<Runtime>) {
+    let req_cfg = QueueConfig::new(dir, "request");
+    let req_cfg = match write_rt.as_ref() { Some(rt) => req_cfg.write_runtime(rt), None => req_cfg };
+    let req_cfg = match read_rt.as_ref() { Some(rt) => req_cfg.read_runtime(rt), None => req_cfg };
+    let res_cfg = QueueConfig::new(dir, "response");
+    let res_cfg = match write_rt.as_ref() { Some(rt) => res_cfg.write_runtime(rt), None => res_cfg };
+    let res_cfg = match read_rt.as_ref() { Some(rt) => res_cfg.read_runtime(rt), None => res_cfg };
+
+    let q_req = IndexedQueue::create(req_cfg).expect("server: create request queue");
+    let q_res = IndexedQueue::create(res_cfg).expect("server: create response queue");
 
     let mut poller = q_req.create_poller().expect("server: create poller");
     let mut appender = q_res.create_appender().expect("server: create appender");
 
-    let shutdown = Cell::new(false);
+    let shutdown = std::cell::Cell::new(false);
     loop {
         let result = poller
             .poll(|_idx, _aid, data| {
-                let (_inst, seq, _payload) = parse_message(data);
-                if seq == SHUTDOWN_SEQ {
-                    shutdown.set(true);
+                if data.len() >= 6 {
+                    let seq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                    if seq == SHUTDOWN_SEQ {
+                        shutdown.set(true);
+                    }
                 }
                 appender.append(data).expect("server: echo append");
                 NextMove::Advance
-            })
-            .expect("server: poll");
+            });
 
         if shutdown.get() {
             break;
         }
 
-        if result == PollResult::EndOfStream {
-            // Server tight-spins — always ready for messages.
+        match result {
+            Ok(PollResult::EndOfStream) => {
+                core::hint::spin_loop();
+            }
+            _ => {}
         }
     }
 

@@ -39,6 +39,30 @@ impl IndexedBatchAppender {
     pub fn id(&self) -> u8 {
         unsafe { ffi::indexed_batch_appender_id(self.inner) }
     }
+
+    /// Convenience: start a batch, append one message, complete, and commit
+    /// in a single call. Avoids four separate FFI crossings.
+    ///
+    /// Equivalent to:
+    ///   let mut b = appender.start_batch()?;
+    ///   b.append(data)?;
+    ///   b.commit()
+    ///
+    /// Returns the committed batch index, or an error on mapping timeout.
+    pub fn append_and_commit(&mut self, data: &[u8]) -> Result<i64, MmapError> {
+        let idx = unsafe {
+            ffi::indexed_batch_appender_append_and_commit(
+                self.inner,
+                data.as_ptr() as *const _,
+                data.len() as i32,
+            )
+        };
+        if idx >= 0 {
+            Ok(idx)
+        } else {
+            Err(MmapError::MapTimedOut)
+        }
+    }
 }
 
 impl Drop for IndexedBatchAppender {
@@ -95,6 +119,18 @@ impl BatchWriter<'_> {
             return Err(MmapError::Internal("append_reserved returned null pointer".into()));
         }
         Ok(unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, size as usize) })
+    }
+
+    /// Append all remaining messages from a BatchPayloadIterator into this batch.
+    ///
+    /// The iterator must be positioned before or at the first un-copied message.
+    /// Useful for echoing an entire batch: call `batch_iterator_advance()` to
+    /// inspect the first message, then call `append_remaining_from()` — it
+    /// starts from wherever the iterator currently is.
+    ///
+    /// Returns the number of messages appended.
+    pub fn append_remaining_from(&mut self, it: &mut ffi::BatchPayloadIterator) -> i32 {
+        unsafe { ffi::mutable_batch_append_remaining_from(self.batch, it) }
     }
 
     /// Commit the batch, making it visible to pollers and readers.
