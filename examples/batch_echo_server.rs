@@ -1,3 +1,10 @@
+//! Batch echo server — listens on a request batch queue and echoes each batch
+//! onto a response batch queue. Supports `--sync` and `--mixed` modes.
+//!
+//! Usage:
+//!   batch_echo_server <directory> <request_queue> <response_queue>
+//!                     [cpu_core] [mapper_cpu] [--sync] [--mixed]
+
 use std::cell::Cell;
 
 use mmap_c_rs::{

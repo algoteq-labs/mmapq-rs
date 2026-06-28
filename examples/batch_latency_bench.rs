@@ -1,3 +1,11 @@
+//! Batch round-trip latency benchmark — measures end-to-end latency through
+//! batch queues using an echo server (internal or external).
+//!
+//! Usage:
+//!   batch_latency_bench <iterations> [warmup] [msg_size]
+//!                       [client_cpu] [server_cpu] [mapper_cpu]
+//!                       [--external] [--sync] [--mixed] [--dir <path>]
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mmap_c_rs::batch::{IndexedBatchAppender, IndexedBatchPoller, IndexedBatchQueue};

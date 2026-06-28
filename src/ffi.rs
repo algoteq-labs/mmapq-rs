@@ -1,4 +1,6 @@
 #![allow(non_camel_case_types, non_snake_case, dead_code, missing_docs)]
+// ^^ missing_docs is suppressed because this is an FFI declarations file
+//    (not public API — public wrapper types are documented in their modules).
 
 use libc::{c_char, c_int, c_void};
 
@@ -16,11 +18,17 @@ pub enum IndexedBatchPoller {}
 pub enum IndexedBatchReader {}
 pub enum IndexedBatchArchiver {}
 pub enum MutableBatch {}
-// Size verified via GDB: 80 bytes (12 fields, 4 padding bytes total).
-// Layout: queue_name(8) + payload_acc(8) + payload_buf.data(8) +
-//         payload_buf.capacity(4) + batch_offset(8) + message_count(4) +
-//         current_msg_index(4) + current_msg_offset(8) + current_msg_length(4) +
-//         next_message_position(8) + exhausted(4) = 72 raw + 8 padding = 80.
+/// Opaque representation of C's `BatchPayloadIterator` (80 bytes).
+///
+/// **Layout** (x86-64 System V ABI, verified via GDB):
+///   `queue_name(8) + payload_acc(8) + payload_buf(16: data(8)+capacity(4)+pad(4))`
+///   `+ batch_offset(8) + message_count(4) + current_msg_index(4)`
+///   `+ current_msg_offset(8) + current_msg_length(4)`
+///   `+ next_message_position(8) + exhausted(4) + trailing_pad(4)`
+///   = **80 bytes** total.
+///
+/// All field access goes through C functions (`batch_iterator_advance`, etc.)
+/// — never access the raw bytes directly.
 #[repr(C)]
 #[derive(Debug)]
 pub struct BatchPayloadIterator {
@@ -84,6 +92,13 @@ pub type MessageHandler = Option<
     ) -> c_int,
 >;
 
+/// Callback invoked by `indexed_batch_poller_poll()` for each batch.
+///
+/// Receives the batch index, a pointer to the BatchReadingContext (embedded
+/// BatchPayloadIterator starts before message 0), and the user-supplied ctx.
+///
+/// Must return a NextMove cast to c_int (NEXT_ADVANCE=0, NEXT_STOP=1,
+/// NEXT_RETREAT=2).
 pub type BatchHandler = Option<
     unsafe extern "C" fn(
         batch_index: i64,
@@ -114,13 +129,27 @@ pub struct ReadingContext {
     pub status: c_int,
 }
 
+/// Result of a batch read or batch poll operation.
+///
+/// Mirrors C's `BatchReadingContext` (indexed_batch_reader.h).
+/// Populated by `indexed_batch_reader_read()` and `indexed_batch_poller_poll()`.
+///
+/// The `batch_iterator` starts **before** message 0 — call
+/// `batch_iterator_advance()` before accessing data.
+///
+/// Fields are valid when `status == BATCH_ENTRY_AVAILABLE`.
 #[repr(C)]
 #[derive(Debug)]
 pub struct BatchReadingContext {
+    /// The batch index that was read or polled.
     pub index: i64,
+    /// Availability status (BATCH_ENTRY_AVAILABLE, _END_OF_STREAM, etc.).
     pub status: c_int,
+    /// Payload file offset where the batch header begins.
     pub batch_offset: i64,
+    /// Number of messages in the batch.
     pub message_count: i32,
+    /// Iterator positioned before message 0 — advance before reading.
     pub batch_iterator: BatchPayloadIterator,
 }
 
