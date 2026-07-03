@@ -11,6 +11,11 @@ use crate::types::BatchEntryStatus;
 /// Random-access batch reader. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchReader {
     pub(crate) inner: *mut ffi::IndexedBatchReader,
+    /// Keeps the read runtime alive for this participant's lifetime
+    /// (batch queues currently always pass NULL runtimes — sync mapping —
+    /// so this is None today; the field exists so batch runtime support
+    /// cannot reintroduce the UAF fixed in tests/runtime_uaf.rs).
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) ctx: std::cell::UnsafeCell<ffi::BatchReadingContext>,
 }
 

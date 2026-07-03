@@ -56,6 +56,11 @@ unsafe extern "C" fn c_batch_trampoline(
 /// Sequential batch poller. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchPoller {
     pub(crate) inner: *mut ffi::IndexedBatchPoller,
+    /// Keeps the read runtime alive for this participant's lifetime
+    /// (batch queues currently always pass NULL runtimes — sync mapping —
+    /// so this is None today; the field exists so batch runtime support
+    /// cannot reintroduce the UAF fixed in tests/runtime_uaf.rs).
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
 

@@ -20,6 +20,9 @@ pub enum MmapError {
     /// The read position exceeds the current file size.
     BeyondFileSize,
 
+    /// An argument is invalid (e.g., zero-length data, NULL pointer).
+    InvalidArgument,
+
     /// All 256 appender IDs are in use.
     PoolExhausted,
 
@@ -46,6 +49,7 @@ impl fmt::Display for MmapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             MmapError::MapTimedOut => write!(f, "mapping timed out — runtime may be overloaded"),
+            MmapError::InvalidArgument => write!(f, "invalid argument (zero-length data, NULL pointer, etc.)"),
             MmapError::FileNotFound => write!(f, "backing file does not exist"),
             MmapError::BeyondFileSize => write!(f, "position beyond current file size"),
             MmapError::PoolExhausted => write!(f, "all 256 appender IDs are in use"),
@@ -65,6 +69,20 @@ impl std::error::Error for MmapError {
             MmapError::Io(e) => Some(e),
             _ => None,
         }
+    }
+}
+
+/// Map a C return code to the appropriate `MmapError` variant.
+///
+/// Call sites that receive a negative `i64` or `i32` from FFI should pass it
+/// through this function to get a consistent error type.
+pub(crate) fn map_rc(rc: i32) -> MmapError {
+    match rc {
+        -4 => MmapError::Corrupt("on-disk corruption detected".into()),
+        -3 => MmapError::QueueClosed,
+        -2 => MmapError::InvalidArgument,
+        -1 => MmapError::MapTimedOut,
+        _  => MmapError::Internal(format!("unexpected C return code: {}", rc)),
     }
 }
 

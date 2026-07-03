@@ -25,7 +25,14 @@ use crate::runtime::Runtime;
 /// The queue's metadata is opened eagerly during `create()` to eliminate
 /// any lazy-init data race.
 pub struct IndexedQueue {
+    /* field order matters: `inner` is declared first so Drop closes the
+       queue while `_write_rt`/`_read_rt` still hold the C runtimes alive. */
     inner: *mut ffi::IndexedQueue,
+    /// Owned clones keeping the runtimes alive for the queue's lifetime.
+    /// The C queue stores raw runtime pointers without cloning; these
+    /// fields are the ownership (UAF regression: tests/runtime_uaf.rs).
+    _write_rt: Option<Runtime>,
+    _read_rt: Option<Runtime>,
     _not_send: PhantomData<*mut ()>,
 }
 
@@ -39,7 +46,7 @@ impl IndexedQueue {
     /// participant creation) if they do not exist — matching C semantics.
     /// However, metadata is opened read-only immediately to pre-resolve
     /// parameters, eliminating the lazy-init race present in the raw C API.
-    pub fn create(config: QueueConfig) -> Result<Self, MmapError> {
+    pub fn create(mut config: QueueConfig) -> Result<Self, MmapError> {
         let dir = CString::new(config.directory.as_str())
             .map_err(|_| MmapError::Internal("directory contains null byte".into()))?;
         let name = CString::new(config.queue_name.as_str())
@@ -72,8 +79,16 @@ impl IndexedQueue {
             return Err(MmapError::Internal("indexed_queue_create returned NULL".into()));
         }
 
+        /* Move the runtime handles out of the config into the queue: the
+           raw pointers were extracted above, so `take()` here transfers
+           ownership without touching the refcount. */
+        let write_owned = config.write_runtime.take();
+        let read_owned = config.read_runtime.take();
+
         Ok(IndexedQueue {
             inner: ptr,
+            _write_rt: write_owned,
+            _read_rt: read_owned,
             _not_send: PhantomData,
         })
     }
@@ -87,6 +102,7 @@ impl IndexedQueue {
         }
         Ok(super::appender::IndexedAppender {
             inner: ptr,
+            _runtime: self._write_rt.clone(),
             _not_send: PhantomData,
         })
     }
@@ -104,6 +120,7 @@ impl IndexedQueue {
         }
         Ok(super::appender::IndexedAppender {
             inner: ptr,
+            _runtime: self._write_rt.clone(),
             _not_send: PhantomData,
         })
     }
@@ -117,6 +134,7 @@ impl IndexedQueue {
         }
         Ok(super::poller::IndexedPoller {
             inner: ptr,
+            _runtime: self._read_rt.clone(),
             _not_send: PhantomData,
         })
     }
@@ -130,6 +148,7 @@ impl IndexedQueue {
         }
         Ok(super::reader::IndexedReader {
             inner: ptr,
+            _runtime: self._read_rt.clone(),
             ctx: std::cell::UnsafeCell::new(ffi::ReadingContext {
                 index: 0,
                 appender_id: 0,

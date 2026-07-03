@@ -11,7 +11,14 @@ use crate::queue::QueueConfig;
 
 /// Batch queue factory. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchQueue {
+    /* field order matters: `inner` first so Drop closes the queue while
+       the runtime fields (future batch runtime support) are still alive. */
     inner: *mut ffi::IndexedBatchQueue,
+    /// Batch queues currently always use sync mapping (NULL runtimes);
+    /// these fields exist so future batch runtime support cannot
+    /// reintroduce the UAF fixed in tests/runtime_uaf.rs.
+    _write_rt: Option<crate::runtime::Runtime>,
+    _read_rt: Option<crate::runtime::Runtime>,
     _not_send: PhantomData<*mut ()>,
 }
 
@@ -45,6 +52,8 @@ impl IndexedBatchQueue {
         }
         Ok(IndexedBatchQueue {
             inner: ptr,
+            _write_rt: None,
+            _read_rt: None,
             _not_send: PhantomData,
         })
     }
@@ -57,6 +66,7 @@ impl IndexedBatchQueue {
         }
         Ok(super::batch_appender::IndexedBatchAppender {
             inner: ptr,
+            _runtime: self._write_rt.clone(),
             _not_send: PhantomData,
         })
     }
@@ -69,6 +79,7 @@ impl IndexedBatchQueue {
         }
         Ok(super::batch_poller::IndexedBatchPoller {
             inner: ptr,
+            _runtime: self._read_rt.clone(),
             _not_send: PhantomData,
         })
     }
@@ -81,6 +92,7 @@ impl IndexedBatchQueue {
         }
         Ok(super::batch_reader::IndexedBatchReader {
             inner: ptr,
+            _runtime: self._read_rt.clone(),
             ctx: std::cell::UnsafeCell::new(unsafe { std::mem::zeroed() }),
         })
     }

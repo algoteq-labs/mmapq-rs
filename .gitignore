@@ -28,3 +28,6 @@ test_queues/
 .venv/
 __pycache__/
 *.pyc
+
+#codeloom
+.codeloom

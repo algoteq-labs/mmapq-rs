@@ -16,7 +16,11 @@ use crate::types::EntryStatus;
 
 /// Random-access reader. Thread-confined (`!Send + !Sync`).
 pub struct IndexedReader {
+    /* field order: `inner` first so close runs while the runtime is alive */
     pub(crate) inner: *mut ffi::IndexedReader,
+    /// Keeps the read runtime alive for this participant's lifetime,
+    /// independently of the queue (UAF regression: tests/runtime_uaf.rs).
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) ctx: std::cell::UnsafeCell<ffi::ReadingContext>,
 }
 

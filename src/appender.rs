@@ -12,14 +12,18 @@
 
 use std::marker::PhantomData;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 
 /// A queue appender — write and commit messages.
 ///
 /// Thread-confined (`!Send + !Sync`). One per writer thread.
 pub struct IndexedAppender {
+    /* field order: `inner` first so close runs while the runtime is alive */
     pub(crate) inner: *mut ffi::IndexedAppender,
+    /// Keeps the write runtime alive for this participant's lifetime,
+    /// independently of the queue (UAF regression: tests/runtime_uaf.rs).
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
 
@@ -28,14 +32,18 @@ impl IndexedAppender {
     ///
     /// Returns the queue index at which the message was committed,
     /// or `Err(MapTimedOut)` on mapping timeout.
+    /// Returns `Err(InvalidArgument)` if `data` is empty.
     pub fn append(&mut self, data: &[u8]) -> Result<i64, MmapError> {
+        if data.is_empty() {
+            return Err(MmapError::InvalidArgument);
+        }
         let n = unsafe {
             ffi::indexed_appender_append(self.inner, data.as_ptr() as *const _, data.len() as i32)
         };
         if n >= 0 {
             Ok(n)
         } else {
-            Err(MmapError::MapTimedOut)
+            Err(map_rc(n as i32))
         }
     }
 
@@ -45,7 +53,11 @@ impl IndexedAppender {
     /// is called with the returned payload offset.
     ///
     /// Returns the payload offset, or `Err(MapTimedOut)` on mapping timeout.
+    /// Returns `Err(InvalidArgument)` if `data` is empty.
     pub fn append_uncommitted(&mut self, data: &[u8]) -> Result<i64, MmapError> {
+        if data.is_empty() {
+            return Err(MmapError::InvalidArgument);
+        }
         let n = unsafe {
             ffi::indexed_appender_append_uncommitted(
                 self.inner,
@@ -56,7 +68,7 @@ impl IndexedAppender {
         if n >= 0 {
             Ok(n)
         } else {
-            Err(MmapError::MapTimedOut)
+            Err(map_rc(n as i32))
         }
     }
 

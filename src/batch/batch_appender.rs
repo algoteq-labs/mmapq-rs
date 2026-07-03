@@ -5,12 +5,17 @@
 
 use std::marker::PhantomData;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 
 /// Batch appender. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchAppender {
     pub(crate) inner: *mut ffi::IndexedBatchAppender,
+    /// Keeps the write runtime alive for this participant's lifetime
+    /// (batch queues currently always pass NULL runtimes — sync mapping —
+    /// so this is None today; the field exists so batch runtime support
+    /// cannot reintroduce the UAF fixed in tests/runtime_uaf.rs).
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
 
@@ -88,14 +93,18 @@ impl BatchWriter<'_> {
     /// Append a message to the in-progress batch.
     ///
     /// Returns the zero-based message index within the batch.
+    /// Returns `Err(InvalidArgument)` if `data` is empty.
     pub fn append(&mut self, data: &[u8]) -> Result<i32, MmapError> {
+        if data.is_empty() {
+            return Err(MmapError::InvalidArgument);
+        }
         let idx = unsafe {
             ffi::mutable_batch_append(self.batch, data.as_ptr() as *const _, data.len() as i32)
         };
         if idx >= 0 {
             Ok(idx)
         } else {
-            Err(MmapError::MapTimedOut)
+            Err(map_rc(idx as i32))
         }
     }
 

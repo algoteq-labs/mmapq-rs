@@ -90,7 +90,11 @@ unsafe extern "C" fn c_trampoline(
 ///
 /// Thread-confined (`!Send + !Sync`). One per reader thread.
 pub struct IndexedPoller {
+    /* field order: `inner` first so close runs while the runtime is alive */
     pub(crate) inner: *mut ffi::IndexedPoller,
+    /// Keeps the read runtime alive for this participant's lifetime,
+    /// independently of the queue (UAF regression: tests/runtime_uaf.rs).
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
 
