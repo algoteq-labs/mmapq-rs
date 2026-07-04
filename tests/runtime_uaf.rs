@@ -31,7 +31,7 @@ fn queue_outlives_user_runtime_binding() {
     let dir = temp_queue_dir("s1");
 
     let q = {
-        let rt = Runtime::new(RuntimeConfig::new().name("uaf-s1")).unwrap();
+        let rt = Runtime::new(RuntimeConfig::new().name("uaf-s1").close_timeout_ns(100_000_000)).unwrap();
         IndexedQueue::create(
             QueueConfig::new(&dir, "q")
                 .write_runtime(&rt)
