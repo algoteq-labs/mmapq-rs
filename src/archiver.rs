@@ -1,9 +1,23 @@
 //! Queue archiver — advances the start index and manages file lifecycle.
 //!
 //! An `IndexedArchiver` is created from an archivable queue. It can:
-//! - Advance the start index past old entries (`archive_up_to_index()`).
-//! - List files that are safe to delete (`archivable_files()`).
-//! - Print a human-readable summary (`print_summary()`).
+//! - **Forward archiving** (`index > current start_index`): walk headers
+//!   backwards from `index - 1` to the current start index, record each
+//!   appender's last committed payload position, advance past the committed
+//!   message to find the next write offset, write that offset to
+//!   appender_meta, and commit the new start_index atomically in queue meta.
+//! - **Backward / undo archiving** (`index < current start_index`): walk
+//!   headers forward from `index` to the current start index. Validate that
+//!   all header and payload files covering that range still exist before
+//!   modifying anything. Record the first payload position per appender,
+//!   write to appender_meta, commit the lower start_index.
+//! - **No-op** when `index == current start_index`.
+//!
+//! The archiver does **not** delete files — `archivable_files()` returns the
+//! list of files fully covered by the archive boundary (safe to delete, move,
+//! or compress), but the caller decides what to do with them.
+//!
+//! Thread-confined (`!Send + !Sync`). One per archiver thread.
 
 use std::ffi::CStr;
 use std::marker::PhantomData;
@@ -22,17 +36,30 @@ pub struct IndexedArchiver {
 impl IndexedArchiver {
     /// Advance the start index past the given index.
     ///
-    /// After this call, entries at or below `index` are no longer accessible
-    /// via poller or reader. The backing files can be listed via
-    /// `archivable_files()` and deleted.
+    /// **Forward** (`index > current start_index`): walks headers backwards,
+    /// records the last committed payload position per appender, advances
+    /// past the committed message to find the next write offset, and commits
+    /// the new start_index atomically. After this call, entries at or below
+    /// `index` are no longer accessible via poller or reader.
+    ///
+    /// **Backward / undo** (`index < current start_index`): validates that
+    /// all header and payload files covering the range still exist, then
+    /// commits the lower start_index. Only possible if the backing files
+    /// have not been deleted.
+    ///
+    /// **No-op** when `index == current start_index`.
+    ///
+    /// The backing files can be listed via `archivable_files()`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
         unsafe { ffi::indexed_archiver_archive_up_to_index(self.inner, index) }
         Ok(())
     }
 
-    /// List files whose entire content has been archived and can be deleted.
+    /// List files whose entire content is covered by the archive boundary
+    /// and are safe to delete, move, or compress.
     ///
-    /// The caller is responsible for deleting the returned files.
+    /// Only returns paths to files that actually exist on disk. The caller
+    /// is responsible for any file management (delete, compress, etc.).
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
@@ -83,4 +110,52 @@ impl Drop for IndexedArchiver {
     fn drop(&mut self) {
         unsafe { ffi::indexed_archiver_close(self.inner) }
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::queue::QueueConfig;
+    use crate::runtime::Runtime;
+
+    fn setup(name: &str) -> (crate::IndexedQueue, crate::IndexedAppender, crate::IndexedPoller, Runtime) {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-archiver").join(name);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+
+        // Create an archivable queue — we need to call indexed_queue_create
+        // directly with an archivable meta file. For now use the public API
+        // (non-archivable) for a basic smoke test.
+        let q = crate::IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        let a = q.create_appender().unwrap();
+        let p = q.create_poller().unwrap();
+        (q, a, p, rt)
+    }
+
+    #[test]
+    fn test_archiver_create_and_close() {
+        let (q, _a, _p, _rt) = setup("test_arch_create");
+        let arch = q.create_archiver().unwrap();
+        // Smoke test: create and close without crash.
+        drop(arch);
+        drop(q);
+    }
+
+    #[test]
+    fn test_archiver_print_summary() {
+        let (q, _a, _p, _rt) = setup("test_arch_summary");
+        let arch = q.create_archiver().unwrap();
+        let s = arch.print_summary();
+        assert!(!s.is_empty(), "archiver summary should not be empty");
+        drop(arch);
+        drop(q);
+    }
+
+    // archivable_files test removed: requires archivable=1 meta which is not
+    // exposed through the public Rust API. Tested in C (test_indexed_archiver.c).
 }

@@ -43,6 +43,7 @@ impl IndexedBatchQueue {
                 config.get_max_file_size(),
                 config.get_start_index(),
                 config.get_timeout(),
+                0,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
             )

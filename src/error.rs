@@ -8,6 +8,7 @@ use std::fmt;
 /// indicate programming errors, configuration issues, or I/O failures
 /// and are typically fatal.
 #[derive(Debug)]
+#[allow(missing_docs)]
 pub enum MmapError {
     /// The async mapper runtime did not complete the mapping within the
     /// configured timeout. The operation can be retried.
@@ -35,6 +36,10 @@ pub enum MmapError {
     /// The queue data is corrupted or inconsistent.
     Corrupt(String),
 
+    /// Schema version or queue type mismatch on open (wrong queue kind,
+    /// or file from an incompatible version).
+    SchemaMismatch,
+
     /// An OS-level I/O error occurred (open, mmap, ftruncate, etc.).
     Io(std::io::Error),
 
@@ -56,6 +61,7 @@ impl fmt::Display for MmapError {
             MmapError::IdInUse => write!(f, "requested appender ID is already acquired"),
             MmapError::QueueClosed => write!(f, "queue has been closed"),
             MmapError::Corrupt(msg) => write!(f, "corruption: {}", msg),
+            MmapError::SchemaMismatch => write!(f, "schema version or queue type mismatch (wrong queue kind, or file from an incompatible version)"),
             MmapError::Io(e) => write!(f, "I/O error: {}", e),
             MmapError::Internal(msg) => write!(f, "internal error: {}", msg),
             MmapError::RuntimeCloseTimeout => write!(f, "runtime failed to stop within timeout"),
@@ -78,6 +84,7 @@ impl std::error::Error for MmapError {
 /// through this function to get a consistent error type.
 pub(crate) fn map_rc(rc: i32) -> MmapError {
     match rc {
+        -5 => MmapError::SchemaMismatch,
         -4 => MmapError::Corrupt("on-disk corruption detected".into()),
         -3 => MmapError::QueueClosed,
         -2 => MmapError::InvalidArgument,

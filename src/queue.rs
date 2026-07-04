@@ -71,6 +71,7 @@ impl IndexedQueue {
                 config.max_file_size,
                 config.start_index,
                 config.timeout_ns,
+                config.archivable as i32,
                 write_rt,
                 read_rt,
             )
@@ -227,6 +228,7 @@ pub struct QueueConfig {
     timeout_ns: u64,
     write_runtime: Option<Runtime>,
     read_runtime: Option<Runtime>,
+    archivable: bool,
 }
 
 impl QueueConfig {
@@ -246,7 +248,16 @@ impl QueueConfig {
             timeout_ns: 10_000_000_000,
             write_runtime: None,
             read_runtime: None,
+            archivable: false,
         }
+    }
+
+    /// Create the queue archivable (archiver may advance start_index).
+    /// Applies at creation only; existing queues keep their on-disk value.
+    /// Non-archivable (default) is the performant mode.
+    pub fn archivable(mut self, archivable: bool) -> Self {
+        self.archivable = archivable;
+        self
     }
 
     /// Base directory for queue files.

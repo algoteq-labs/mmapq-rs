@@ -212,6 +212,7 @@ extern "C" {
         max_file_size: i64,
         start_index: i64,
         timeout_ns: u64,
+        archivable: c_int,
         write_runtime: *mut Runtime,
         read_runtime: *mut Runtime,
     ) -> *mut IndexedQueue;
@@ -255,6 +256,7 @@ extern "C" {
         ring_size: c_int,
         max_file_size: i64,
         timeout_ns: u64,
+        archivable: c_int,
         runtime: *mut Runtime,
     ) -> *mut IndexedAppender;
 
@@ -265,6 +267,7 @@ extern "C" {
         ring_size: c_int,
         max_file_size: i64,
         timeout_ns: u64,
+        archivable: c_int,
         runtime: *mut Runtime,
         appender_id: u8,
     ) -> *mut IndexedAppender;
@@ -437,6 +440,7 @@ extern "C" {
         max_file_size: i64,
         start_index: i64,
         timeout_ns: u64,
+        archivable: c_int,
         write_runtime: *mut Runtime,
         read_runtime: *mut Runtime,
     ) -> *mut IndexedBatchQueue;
@@ -476,6 +480,7 @@ extern "C" {
         ring_size: c_int,
         max_file_size: i64,
         timeout_ns: u64,
+        archivable: c_int,
         runtime: *mut Runtime,
     ) -> *mut IndexedBatchAppender;
 
