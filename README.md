@@ -2,18 +2,22 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Idiomatic Rust bindings for [mmap-c](https://github.com/algoteq-labs/mmap-c)** — a low-latency,
+**Idiomatic Rust bindings for mmap-c** — a low-latency,
 memory-mapped, shared-memory indexed queue for inter-process messaging on Linux.
 
 ## Features
 
 - **Zero-copy** — messages are read directly from mapped memory, no heap allocation on the hot path
 - **Lock-free** — multi-producer, multi-consumer (up to 256 concurrent appenders) via atomic CAS on cache-line-spaced headers
-- **Cross-process** — share queues between Rust, C, and Java processes on the same machine
+- **Cross-process** — share queues between Rust, C, and Algoteq Java processes on the same machine
 - **Thread-safe factory** — `IndexedQueue` is `Send + Sync`, participants are `!Send + !Sync`
 - **RAII lifecycle** — `BatchWriter::commit()` consumes `self`, drop rolls back
 - **Panic-safe** — poll closure panics are caught and re-raised after the C frame unwinds
-- **C-ABI compatible** — identical wire format and protocol as the Java `tools4j/mmap` library
+- **C-ABI compatible** — identical wire format and protocol as Algoteq's Java implementation (tools4j-derived; NOT compatible with upstream tools4j)
+
+
+Feature coverage vs the C library and Python bindings is tracked in
+`doc/feature-matrix.md` in the mmap-c repository.
 
 ## Quick Start
 
@@ -51,7 +55,7 @@ two file types:
 - **Header file**: one per queue — stores 8-byte atomically-committed header entries
   spaced 512 bytes apart (vertical walk layout). Each header encodes an appender ID
   and a payload offset in a single 64-bit word.
-- **Payload files**: one per appender — stores [length prefix][payload bytes] framing.
+- **Payload files**: one per appender — stores `[length prefix][payload bytes]` framing.
 
 The vertical walk layout (index N is at offset N × 512) ensures that consecutive
 writes by multiple appenders land on separate cache lines, avoiding false sharing.
@@ -133,7 +137,7 @@ migration. The measured minimum (min) value is the best indicator of raw path la
 
 ## Acknowledgements
 
-`mmap-c-rs` is a Rust port of [Algoteq's mmap-c](https://github.com/algoteq-labs/mmap-c),
+`mmap-c-rs` is a Rust port of Algoteq's mmap-c,
 which was originally derived from the [tools4j/mmap](https://github.com/tools4j/mmap) library.
 
 ## License
