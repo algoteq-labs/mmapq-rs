@@ -17,7 +17,9 @@ memory-mapped, shared-memory indexed queue for inter-process messaging on Linux.
 
 
 Feature coverage vs the C library and Python bindings is tracked in
-`doc/feature-matrix.md` in the mmap-c repository.
+`doc/feature-matrix.md` in the mmap-c repository. For the command/event
+architecture this library was designed to serve, see
+`doc/event-sourcing-guide.md` in the mmap-c repository.
 
 ## Quick Start
 
@@ -74,21 +76,28 @@ writes by multiple appenders land on separate cache lines, avoiding false sharin
 
 ## Examples
 
-Single-message round-trip latency benchmark:
+Benchmark suite (runs all three configurations — internal, external async,
+external sync — for both single-message and batch queues):
 
 ```bash
-# Internal mode (same-process server thread)
-cargo run --release --example latency_bench -- 100000 10000 64
-
-# External mode (separate echo server process)
-cargo run --release --example echo_server -- /tmp request response &
-cargo run --release --example latency_bench -- 100000 10000 64 --external
+./scripts/bench.sh          # single-message queue
+./scripts/batch_bench.sh    # batch queue
 ```
 
-Batch queue equivalent:
+Or run individual configurations manually:
 
 ```bash
+# Single-message, internal mode
+cargo run --release --example latency_bench -- 100000 10000 64
+
+# Single-message, external mode
+cargo run --release --example echo_server -- /tmp request response &
+cargo run --release --example latency_bench -- 100000 10000 64 --external
+
+# Batch queue, internal mode
 cargo run --release --example batch_latency_bench -- 100000 10000 64
+
+# Batch queue, external mode
 cargo run --release --example batch_echo_server -- /tmp batch_req batch_res &
 cargo run --release --example batch_latency_bench -- 100000 10000 64 --external
 ```
