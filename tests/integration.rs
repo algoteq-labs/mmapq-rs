@@ -176,3 +176,47 @@ fn test_reader_metadata() {
     let beyond = reader.read(last_idx + 1).unwrap();
     assert!(beyond.is_none(), "read past end should be None");
 }
+
+#[test]
+fn test_poll_corrupt_payload_raises_error() {
+    use std::io::{Write, Seek};
+    use mmap_c_rs::MmapError;
+
+    let rt = Runtime::region_mapper().unwrap();
+    let dir = std::env::temp_dir().join("mmap-rs-corrupt");
+    let name = "q";
+    let qdir = dir.join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&qdir).unwrap();
+    let q = IndexedQueue::create(
+        QueueConfig::new(dir.to_str().unwrap(), name)
+            .write_runtime(&rt)
+            .read_runtime(&rt),
+    )
+    .unwrap();
+
+    let mut writer = q.create_appender().unwrap();
+    writer.append(b"hello").unwrap();
+    drop(writer);
+
+    // Corrupt the 4-byte length prefix at offset 64 in payload_0_0
+    let payload_path = qdir.join("payload_0_0");
+    let mut f = std::fs::OpenOptions::new()
+        .write(true)
+        .open(&payload_path)
+        .unwrap();
+    f.seek(std::io::SeekFrom::Start(64)).unwrap();
+    f.write_all(b"\x00\x00\x00\x00").unwrap();
+    drop(f);
+
+    let mut poller = q.create_poller().unwrap();
+    let result = poller.poll(|_idx, _aid, _data| NextMove::Advance);
+    assert!(result.is_err(), "poll should return Err on corrupt payload");
+    match result {
+        Err(MmapError::Corrupt(_)) => {} // expected
+        Err(other) => panic!("expected Corrupt error, got {:?}", other),
+        Ok(_) => panic!("expected Err, got Ok"),
+    }
+    drop(poller);
+    drop(q);
+}

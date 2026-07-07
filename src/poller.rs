@@ -150,6 +150,7 @@ impl IndexedPoller {
         });
 
         match result {
+            ffi::POLL_CORRUPT => Err(MmapError::Corrupt("committed payload data is corrupt".into())),
             ffi::POLL_ERROR => Err(MmapError::MapTimedOut),
             _ => Ok(PollResult::from_ffi(result)),
         }

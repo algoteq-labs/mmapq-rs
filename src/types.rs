@@ -24,6 +24,8 @@ pub enum PollResult {
     Archived = 4,
     /// A mapping timeout or I/O error occurred.
     Error = 5,
+    /// Committed payload data is corrupt (zero-length or invalid).
+    Corrupt = 6,
 }
 
 impl PollResult {
@@ -36,6 +38,7 @@ impl PollResult {
             3 => PollResult::Retreated,
             4 => PollResult::Archived,
             5 => PollResult::Error,
+            6 => PollResult::Corrupt,
             _ => PollResult::Error,
         }
     }

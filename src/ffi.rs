@@ -62,6 +62,7 @@ pub const POLL_STOPPED: c_int = 2;
 pub const POLL_RETREATED: c_int = 3;
 pub const POLL_ARCHIVED: c_int = 4;
 pub const POLL_ERROR: c_int = 5;
+pub const POLL_CORRUPT: c_int = 6;
 
 pub const NEXT_ADVANCE: c_int = 0;
 pub const NEXT_STOP: c_int = 1;
