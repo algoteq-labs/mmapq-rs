@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mmap_c_rs::{IndexedAppender, IndexedPoller, IndexedQueue, NextMove, PollResult, QueueConfig, Runtime};
+use mmapq::{IndexedAppender, IndexedPoller, IndexedQueue, NextMove, PollResult, QueueConfig, Runtime};
 
 fn pin_thread(cpu: i32) {
     if cpu < 0 {

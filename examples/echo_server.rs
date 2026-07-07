@@ -1,5 +1,5 @@
 use std::cell::Cell;
-use mmap_c_rs::{IndexedQueue, NextMove, QueueConfig, Runtime};
+use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 
 const SHUTDOWN_SEQ: u32 = 0;
 

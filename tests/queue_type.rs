@@ -3,7 +3,7 @@
 //! Verifies that opening a queue with the wrong participant kind is refused
 //! (e.g., batch poller on a normal queue, or normal poller on a batch queue).
 
-use mmap_c_rs::{IndexedQueue, QueueConfig, Runtime, RuntimeConfig};
+use mmapq::{IndexedQueue, QueueConfig, Runtime, RuntimeConfig};
 
 fn temp_dir(tag: &str) -> String {
     let dir = std::env::temp_dir().join(format!("mmap-qt-{}-{}", tag, std::process::id()));
@@ -28,7 +28,7 @@ fn normal_queue_rejects_batch_participant() {
     drop(q);
 
     // Try to open the same directory with batch participants — must fail
-    let bq = mmap_c_rs::batch::IndexedBatchQueue::create(
+    let bq = mmapq::batch::IndexedBatchQueue::create(
         QueueConfig::new(&dir, "q").write_runtime(&rt).read_runtime(&rt),
     )
     .unwrap();
@@ -44,7 +44,7 @@ fn batch_queue_rejects_normal_participant() {
     let rt = Runtime::new(RuntimeConfig::new().name("qt2")).unwrap();
 
     // Create a batch queue — batch appender creates meta with QUEUE_TYPE_BATCH
-    let bq = mmap_c_rs::batch::IndexedBatchQueue::create(
+    let bq = mmapq::batch::IndexedBatchQueue::create(
         QueueConfig::new(&dir, "q").write_runtime(&rt).read_runtime(&rt),
     )
     .unwrap();

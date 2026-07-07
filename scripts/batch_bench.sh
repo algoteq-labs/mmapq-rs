@@ -38,7 +38,7 @@ BENCH="cargo run --release --example batch_latency_bench --"
 ECHO="cargo run --release --example batch_echo_server --"
 
 echo "========================================================"
-echo "  mmap-c-rs batch queue latency benchmark"
+echo "  mmapq-rs batch queue latency benchmark"
 echo "  $(date)"
 echo "  Cores:   client=$CLIENT  server=$SERVER  mapper=$MAPPER  echo_mapper=$ECHO_MAPPER"
 echo "  Config:  iter=$ITER  warmup=$WARMUP  msg=${MSG}B"

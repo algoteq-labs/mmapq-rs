@@ -4,7 +4,7 @@
 //! in the meta file to 1, and that the default (false) sets it to 0.
 
 use std::io::{Read, Seek, SeekFrom};
-use mmap_c_rs::{IndexedQueue, QueueConfig, Runtime, RuntimeConfig};
+use mmapq::{IndexedQueue, QueueConfig, Runtime, RuntimeConfig};
 
 fn temp_dir(tag: &str) -> String {
     let dir = std::env::temp_dir().join(format!("mmap-arch-{}-{}", tag, std::process::id()));

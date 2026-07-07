@@ -1,8 +1,8 @@
-# mmap-c-rs
+# mmapq
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-**Idiomatic Rust bindings for mmap-c** — a low-latency,
+**Idiomatic Rust bindings for mmapq** — a low-latency,
 memory-mapped, shared-memory indexed queue for inter-process messaging on Linux.
 
 ## Features
@@ -17,14 +17,14 @@ memory-mapped, shared-memory indexed queue for inter-process messaging on Linux.
 
 
 Feature coverage vs the C library and Python bindings is tracked in
-`doc/feature-matrix.md` in the mmap-c repository. For the command/event
+`doc/feature-matrix.md` in the mmapq repository. For the command/event
 architecture this library was designed to serve, see
-`doc/event-sourcing-guide.md` in the mmap-c repository.
+`doc/event-sourcing-guide.md` in the mmapq repository.
 
 ## Quick Start
 
 ```rust
-use mmap_c_rs::{IndexedQueue, NextMove, PollResult, QueueConfig, Runtime};
+use mmapq::{IndexedQueue, NextMove, PollResult, QueueConfig, Runtime};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::region_mapper()?;
@@ -51,7 +51,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Architecture
 
-mmap-c-rs wraps the C library's shared-memory queue. The queue stores messages in
+mmapq wraps the C library's shared-memory queue. The queue stores messages in
 two file types:
 
 - **Header file**: one per queue — stores 8-byte atomically-committed header entries
@@ -127,14 +127,14 @@ cargo test --test cross_process
 
 ## Performance
 
-The C mmap-c library achieves its published baseline of ~280 ns median round-trip
+The C mmapq library achieves its published baseline of ~280 ns median round-trip
 between two processes on isolated cores. The Rust wrapper adds approximately
 **~10 ns overhead** per round-trip (FFI call, closure dispatch, slice construction).
 
 To reproduce the full benchmark on isolated cores:
 
 ```bash
-# C baseline (from the mmap-c repository)
+# C baseline (from the mmapq repository)
 ./latency_bench 20000000 100000 64 5 7 9
 
 # Rust equivalent
@@ -146,7 +146,7 @@ migration. The measured minimum (min) value is the best indicator of raw path la
 
 ## Acknowledgements
 
-`mmap-c-rs` is a Rust port of Algoteq's mmap-c,
+`mmapq-rs` is a Rust port of Algoteq's mmapq,
 which was originally derived from the [tools4j/mmap](https://github.com/tools4j/mmap) library.
 
 ## License

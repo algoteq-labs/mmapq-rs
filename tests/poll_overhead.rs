@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use mmap_c_rs::{IndexedQueue, NextMove, PollResult, QueueConfig};
+use mmapq::{IndexedQueue, NextMove, PollResult, QueueConfig};
 
 #[test]
 fn test_poll_overhead_and_append_poll() {

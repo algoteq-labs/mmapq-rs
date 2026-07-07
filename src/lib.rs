@@ -1,7 +1,7 @@
 #![warn(missing_docs)]
-//! # mmap-c-rs
+//! # mmapq-rs
 //!
-//! Idiomatic Rust bindings for **mmap-c** — a low-latency, memory-mapped,
+//! Idiomatic Rust bindings for **mmapq** — a low-latency, memory-mapped,
 //! shared-memory indexed queue for inter-process messaging on Linux.
 //!
 //! ## Architecture
@@ -27,7 +27,7 @@
 //! ## Quick start
 //!
 //! ```rust
-//! use mmap_c_rs::{IndexedQueue, NextMove, QueueConfig, Runtime};
+//! use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 //!
 //! let rt = Runtime::region_mapper().unwrap();
 //! let q = IndexedQueue::create(

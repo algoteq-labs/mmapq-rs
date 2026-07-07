@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use mmap_c_rs::{
+use mmapq::{
     IndexedQueue, NextMove, PollResult, QueueConfig, Runtime,
 };
 
@@ -180,7 +180,7 @@ fn test_reader_metadata() {
 #[test]
 fn test_poll_corrupt_payload_raises_error() {
     use std::io::{Write, Seek};
-    use mmap_c_rs::MmapError;
+    use mmapq::MmapError;
 
     let rt = Runtime::region_mapper().unwrap();
     let dir = std::env::temp_dir().join("mmap-rs-corrupt");

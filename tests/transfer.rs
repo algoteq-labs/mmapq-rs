@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use mmap_c_rs::{
+use mmapq::{
     transfer::QueueTransfer, IndexedQueue, NextMove, PollResult, QueueConfig,
 };
 

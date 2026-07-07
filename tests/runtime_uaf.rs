@@ -10,7 +10,7 @@
 //! asserts, UB under NDEBUG. This file is a separate integration-test binary
 //! so a regression kills only this process, reported as one test failure.
 
-use mmap_c_rs::{IndexedQueue, QueueConfig, Runtime, RuntimeConfig};
+use mmapq::{IndexedQueue, QueueConfig, Runtime, RuntimeConfig};
 
 fn temp_queue_dir(tag: &str) -> String {
     let dir = std::env::temp_dir().join(format!(
@@ -73,9 +73,9 @@ fn participants_outlive_queue_and_runtime_binding() {
         .poll(|_idx, _aid, data: &[u8]| {
             assert_eq!(data, b"survives-queue-drop");
             seen += 1;
-            mmap_c_rs::NextMove::Advance
+            mmapq::NextMove::Advance
         })
         .unwrap();
-    assert!(matches!(res, mmap_c_rs::PollResult::Advanced));
+    assert!(matches!(res, mmapq::PollResult::Advanced));
     assert_eq!(seen, 1);
 }

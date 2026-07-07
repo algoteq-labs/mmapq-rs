@@ -8,8 +8,8 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use mmap_c_rs::batch::{IndexedBatchAppender, IndexedBatchPoller, IndexedBatchQueue};
-use mmap_c_rs::{ffi, NextMove, PollResult, QueueConfig, Runtime};
+use mmapq::batch::{IndexedBatchAppender, IndexedBatchPoller, IndexedBatchQueue};
+use mmapq::{ffi, NextMove, PollResult, QueueConfig, Runtime};
 
 fn pin_thread(cpu: i32) {
     if cpu < 0 {

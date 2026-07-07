@@ -2,7 +2,7 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::time::Duration;
 
-use mmap_c_rs::{IndexedQueue, NextMove, PollResult, QueueConfig};
+use mmapq::{IndexedQueue, NextMove, PollResult, QueueConfig};
 
 /// Find or build the C echo_server binary.
 fn c_echo_server_path() -> PathBuf {
@@ -134,9 +134,9 @@ fn test_rust_client_c_batch_echo_server() {
     let req = QueueConfig::new(dir_str, "breq");
     let res = QueueConfig::new(dir_str, "bres");
     let q_req =
-        mmap_c_rs::batch::IndexedBatchQueue::create(req).expect("create batch req queue");
+        mmapq::batch::IndexedBatchQueue::create(req).expect("create batch req queue");
     let q_res =
-        mmap_c_rs::batch::IndexedBatchQueue::create(res).expect("create batch res queue");
+        mmapq::batch::IndexedBatchQueue::create(res).expect("create batch res queue");
 
     let mut appender = q_req.create_appender().expect("create appender");
     let mut poller = q_res.create_poller().expect("create poller");
@@ -156,13 +156,13 @@ fn test_rust_client_c_batch_echo_server() {
         loop {
             let result = poller
                 .poll(|_b_idx, ctx| {
-                    if unsafe { mmap_c_rs::ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
+                    if unsafe { mmapq::ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
                         return NextMove::Advance;
                     }
-                    let len = unsafe { mmap_c_rs::ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
+                    let len = unsafe { mmapq::ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
                     let data = unsafe {
                         std::slice::from_raw_parts(
-                            mmap_c_rs::ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
+                            mmapq::ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
                             len as usize,
                         )
                     };

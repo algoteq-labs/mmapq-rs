@@ -1,8 +1,8 @@
 [package]
-name = "mmap-c-rs"
+name = "mmapq"
 version = "0.1.0"
 edition = "2021"
-description = "Idiomatic Rust bindings for mmap-c — low-latency shared-memory indexed queue"
+description = "Idiomatic Rust bindings for mmapq — low-latency shared-memory indexed queue"
 license = "MIT"
 
 [build-dependencies]
@@ -17,7 +17,7 @@ codegen-units = 1
 panic = "abort"
 
 [lib]
-name = "mmap_c_rs"
+name = "mmapq"
 path = "src/lib.rs"
 
 [[example]]

@@ -38,7 +38,7 @@ BENCH="cargo run --release --example latency_bench --"
 ECHO="cargo run --release --example echo_server --"
 
 echo "========================================================"
-echo "  mmap-c-rs single-message queue latency benchmark"
+echo "  mmapq-rs single-message queue latency benchmark"
 echo "  $(date)"
 echo "  Cores:   client=$CLIENT  server=$SERVER  mapper=$MAPPER  echo_mapper=$ECHO_MAPPER"
 echo "  Config:  iter=$ITER  warmup=$WARMUP  msg=${MSG}B"

@@ -10,7 +10,7 @@
 //! Then update the expected constants below.
 
 use std::mem::size_of;
-use mmap_c_rs::ffi;
+use mmapq::ffi;
 
 /// Compute the byte offset of a field within a struct.
 fn offset_of<T, F>(obj: &T, field_ptr: *const F) -> usize {

@@ -1,4 +1,4 @@
-//! Error types returned by mmap-c-rs operations.
+//! Error types returned by mmapq-rs operations.
 
 use std::fmt;
 

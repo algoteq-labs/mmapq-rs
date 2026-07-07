@@ -7,7 +7,7 @@
 
 use std::cell::Cell;
 
-use mmap_c_rs::{
+use mmapq::{
     batch::{IndexedBatchAppender, IndexedBatchQueue},
     ffi, NextMove, QueueConfig, Runtime,
 };
