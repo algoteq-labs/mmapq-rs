@@ -1,3 +1,4 @@
 [submodule "c"]
 	path = c
 	url = https://github.com/algoteq-labs/mmapq.git
+	branch = main
