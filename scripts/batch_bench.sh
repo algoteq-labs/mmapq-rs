@@ -48,29 +48,29 @@ echo "========================================================"
 # ── 1. Internal server ────────────────────────────────────────────────────────
 echo ""
 echo "--- INTERNAL SERVER ---"
-rm -rf "$DIR/batch_req" "$DIR/batch_res"
+rm -rf "$DIR/request" "$DIR/response"
 sleep 2
 $BENCH $ITER $WARMUP $MSG $CLIENT $SERVER $MAPPER
 
 # ── 2. External server — async ────────────────────────────────────────────────
 echo ""
 echo "--- EXTERNAL SERVER (async) ---"
-rm -rf "$DIR/batch_req" "$DIR/batch_res"
+rm -rf "$DIR/request" "$DIR/response"
 sleep 2
-$ECHO "$DIR" batch_req batch_res $SERVER $ECHO_MAPPER &
+$ECHO "$DIR" request response $SERVER $ECHO_MAPPER &
 ECHO_PID=$!
-while [ ! -d "$DIR/batch_res" ]; do sleep 0.01; done
+while [ ! -d "$DIR/response" ]; do sleep 0.01; done
 $BENCH $ITER $WARMUP $MSG $CLIENT $SERVER $MAPPER --external
 wait $ECHO_PID 2>/dev/null || true
 
 # ── 3. External server — sync ─────────────────────────────────────────────────
 echo ""
 echo "--- EXTERNAL SERVER (sync) ---"
-rm -rf "$DIR/batch_req" "$DIR/batch_res"
+rm -rf "$DIR/request" "$DIR/response"
 sleep 2
-$ECHO "$DIR" batch_req batch_res $SERVER -1 --sync &
+$ECHO "$DIR" request response $SERVER -1 --sync &
 ECHO_PID=$!
-while [ ! -d "$DIR/batch_res" ]; do sleep 0.01; done
+while [ ! -d "$DIR/response" ]; do sleep 0.01; done
 $BENCH $ITER $WARMUP $MSG $CLIENT $SERVER $MAPPER --external --sync
 wait $ECHO_PID 2>/dev/null || true
 
