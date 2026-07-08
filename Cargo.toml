@@ -3,7 +3,7 @@ name = "mmapq"
 version = "0.1.0"
 edition = "2021"
 description = "Idiomatic Rust bindings for mmapq — low-latency shared-memory indexed queue"
-license = "MIT"
+license = "BSD-2-Clause"
 
 [build-dependencies]
 cc = "1.0"

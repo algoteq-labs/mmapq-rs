@@ -59,10 +59,10 @@ struct BatchLatencyProbe {
 
 impl BatchLatencyProbe {
     fn create(instance_id: u16, msg_size: usize, dir: &str, write_rt: Option<&Runtime>, read_rt: Option<&Runtime>) -> Self {
-        let req_cfg = QueueConfig::new(dir, "batch_req");
+        let req_cfg = QueueConfig::new(dir, "request");
         let req_cfg = match write_rt { Some(rt) => req_cfg.write_runtime(rt), None => req_cfg };
         let req_cfg = match read_rt { Some(rt) => req_cfg.read_runtime(rt), None => req_cfg };
-        let res_cfg = QueueConfig::new(dir, "batch_res");
+        let res_cfg = QueueConfig::new(dir, "response");
         let res_cfg = match write_rt { Some(rt) => res_cfg.write_runtime(rt), None => res_cfg };
         let res_cfg = match read_rt { Some(rt) => res_cfg.read_runtime(rt), None => res_cfg };
 
@@ -130,50 +130,64 @@ impl BatchLatencyProbe {
     }
 }
 
-fn format_duration(ns: u64) -> String {
-    if ns < 1000 {
-        format!("{} ns", ns)
-    } else if ns < 1_000_000 {
-        format!("{:.2} µs", ns as f64 / 1000.0)
-    } else {
-        format!("{:.2} ms", ns as f64 / 1_000_000.0)
+struct LatencyStats {
+    mean: f64,
+    min: u64,
+    max: u64,
+    p50: u64,
+    p90: u64,
+    p95: u64,
+    p99: u64,
+    p999: u64,
+    p9999: u64,
+    p99999: u64,
+    throughput: f64,
+}
+
+fn compute_stats(results: &[u64], elapsed_ns: u64) -> LatencyStats {
+    let total: u64 = results.iter().sum();
+    let mean = total as f64 / results.len() as f64;
+    let mut sorted = results.to_vec();
+    sorted.sort_unstable();
+    let len = sorted.len();
+    LatencyStats {
+        mean,
+        min:   sorted[0],
+        max:   sorted[len - 1],
+        p50:   sorted[(len as f64 * 0.50)   as usize],
+        p90:   sorted[(len as f64 * 0.90)   as usize],
+        p95:   sorted[(len as f64 * 0.95)   as usize],
+        p99:   sorted[(len as f64 * 0.99)   as usize],
+        p999:  sorted[(len as f64 * 0.999)  as usize],
+        p9999: sorted[(len as f64 * 0.9999) as usize],
+        p99999:sorted[(len as f64 * 0.99999)as usize],
+        throughput: len as f64 / (elapsed_ns as f64 / 1_000_000_000.0),
     }
 }
 
-fn print_stats(results: &[u64], elapsed_ns: u64, label: &str) {
-    if results.is_empty() {
-        return;
-    }
-    let mut sorted = results.to_vec();
-    sorted.sort_unstable();
 
-    let total: u64 = sorted.iter().sum();
-    let mean = total as f64 / sorted.len() as f64;
+fn print_oneline(s: &LatencyStats, n: usize) {
+    println!("BENCH: iterations={} mean={:.1} min={} p50={} p90={} p99={} p99.9={} p99.99={} p99.999={}",
+        n, s.mean, s.min, s.p50, s.p90, s.p99, s.p999, s.p9999, s.p99999);
+}
 
-    let p50 = sorted[(sorted.len() as f64 * 0.50) as usize];
-    let p90 = sorted[(sorted.len() as f64 * 0.90) as usize];
-    let p99 = sorted[(sorted.len() as f64 * 0.99) as usize];
-    let p999 = sorted[(sorted.len() as f64 * 0.999) as usize];
-    let p9999 = sorted[(sorted.len() as f64 * 0.9999) as usize];
-    let p99999 = sorted[(sorted.len() as f64 * 0.99999) as usize];
-    let min = sorted[0];
-    let max = sorted[sorted.len() - 1];
-
-    let throughput = (sorted.len() as f64) / (elapsed_ns as f64 / 1_000_000_000.0);
-
-    println!("\n{}", label);
-    println!("  {:>6} samples", sorted.len());
-    println!("  Throughput: {:.0} ops/sec", throughput);
-    println!("  Latency:");
-    println!("    Mean:    {}", format_duration(mean as u64));
-    println!("    Min:     {}", format_duration(min));
-    println!("    P50:     {}", format_duration(p50));
-    println!("    P90:     {}", format_duration(p90));
-    println!("    P99:     {}", format_duration(p99));
-    println!("    P99.9:   {}", format_duration(p999));
-    println!("    P99.99:  {}", format_duration(p9999));
-    println!("    P99.999: {}", format_duration(p99999));
-    println!("    Max:     {}", format_duration(max));
+fn print_multiline(s: &LatencyStats, n: usize) {
+    println!("\nBatch Round-Trip Latency Statistics (nanoseconds):");
+    println!("------------------------------------------");
+    println!("Iterations:   {:>12}", n);
+    println!("Throughput: {:>12.2} ops/sec", s.throughput);
+    println!("Average:      {:>12.2}", s.mean);
+    println!("Min (p0):     {:>12}", s.min);
+    println!("Max (p100):   {:>12}", s.min.max(s.max));
+    println!("------------------------------------------");
+    println!("P50:          {:>12}", s.p50);
+    println!("P90:          {:>12}", s.p90);
+    println!("P95:          {:>12}", s.p95);
+    println!("P99:          {:>12}", s.p99);
+    println!("P99.9:        {:>12}", s.p999);
+    println!("P99.99:       {:>12}", s.p9999);
+    println!("P99.999:      {:>12}", s.p99999);
+    println!("------------------------------------------");
 }
 
 fn main() {
@@ -183,6 +197,7 @@ fn main() {
         eprintln!("  options: --external  External server mode");
         eprintln!("           --sync     Synchronous mode (no mapper runtime)");
         eprintln!("           --mixed    Mixed mode (async write, sync read)");
+        eprintln!("           --oneline  Single-line batch latency summary for scripting");
         eprintln!("           --dir <d>  Queue base directory (default: /tmp)");
         std::process::exit(1);
     }
@@ -192,6 +207,7 @@ fn main() {
     let mut external_server = false;
     let mut use_sync = false;
     let mut use_mixed = false;
+    let mut oneline_mode = false;
     let mut dir = "/tmp".to_string();
 
     while i < args.len() {
@@ -199,6 +215,7 @@ fn main() {
             "--external" | "-e" => { external_server = true; i += 1; }
             "--sync" | "-s" => { use_sync = true; i += 1; }
             "--mixed" | "-m" => { use_mixed = true; i += 1; }
+            "--oneline" | "-1" => { oneline_mode = true; i += 1; }
             "--dir" | "-d" => { if i + 1 < args.len() { dir = args[i + 1].clone(); i += 2; } else { i += 1; } }
             _ => { pos.push(args[i].clone()); i += 1; }
         }
@@ -272,7 +289,12 @@ fn main() {
     }
     let end_bench = monotonic_nanos();
 
-    print_stats(&results, end_bench - start_bench, "Batch Round-Trip Latency Statistics (nanoseconds):");
+    let s = compute_stats(&results, end_bench - start_bench);
+    if oneline_mode {
+        print_oneline(&s, results.len());
+    } else {
+        print_multiline(&s, results.len());
+    }
 
     send_shutdown(&mut probe);
 }
@@ -320,10 +342,10 @@ fn send_shutdown(probe: &mut BatchLatencyProbe) {
 
 /// Internal batch echo server thread.
 fn internal_server(dir: &str, write_rt: Option<Runtime>, read_rt: Option<Runtime>) {
-    let req_cfg = QueueConfig::new(dir, "batch_req");
+    let req_cfg = QueueConfig::new(dir, "request");
     let req_cfg = match write_rt.as_ref() { Some(rt) => req_cfg.write_runtime(rt), None => req_cfg };
     let req_cfg = match read_rt.as_ref() { Some(rt) => req_cfg.read_runtime(rt), None => req_cfg };
-    let res_cfg = QueueConfig::new(dir, "batch_res");
+    let res_cfg = QueueConfig::new(dir, "response");
     let res_cfg = match write_rt.as_ref() { Some(rt) => res_cfg.write_runtime(rt), None => res_cfg };
     let res_cfg = match read_rt.as_ref() { Some(rt) => res_cfg.read_runtime(rt), None => res_cfg };
 
