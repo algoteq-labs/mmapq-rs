@@ -117,6 +117,17 @@ pub type QueueFilterFn = Option<
     ) -> c_int,
 >;
 
+pub type BatchQueueFilterFn = Option<
+    unsafe extern "C" fn(
+        batch_index: i64,
+        msg_index: i32,
+        msg_count: i32,
+        data: *const c_void,
+        length: i32,
+        ctx: *mut c_void,
+    ) -> c_int,
+>;
+
 /* ── ReadingContext (mirrors C struct) ────────────────────────────────────── */
 
 #[repr(C)]
@@ -259,6 +270,7 @@ extern "C" {
         timeout_ns: u64,
         archivable: c_int,
         runtime: *mut Runtime,
+        start_index: i64,
     ) -> *mut IndexedAppender;
 
     pub fn indexed_appender_create_with_id(
@@ -271,6 +283,7 @@ extern "C" {
         archivable: c_int,
         runtime: *mut Runtime,
         appender_id: u8,
+        start_index: i64,
     ) -> *mut IndexedAppender;
 
     pub fn indexed_appender_append(
@@ -483,6 +496,7 @@ extern "C" {
         timeout_ns: u64,
         archivable: c_int,
         runtime: *mut Runtime,
+        start_index: i64,
     ) -> *mut IndexedBatchAppender;
 
     pub fn indexed_batch_appender_start_batch(
@@ -700,8 +714,10 @@ extern "C" {
         directory: *const c_char,
         queue_name: *const c_char,
         start_index: i64,
+        start_index_mode: c_int,
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
+        allow_append: c_int,
     ) -> i64;
 
     pub fn queue_transfer_import_batch_stream(
@@ -709,8 +725,10 @@ extern "C" {
         directory: *const c_char,
         queue_name: *const c_char,
         start_index: i64,
+        start_index_mode: c_int,
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
+        allow_append: c_int,
     ) -> i64;
 
     pub fn queue_transfer_copy(
@@ -725,6 +743,22 @@ extern "C" {
         ctx: *mut c_void,
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
+        allow_append: c_int,
+    ) -> i64;
+
+    pub fn queue_transfer_copy_batch_to_normal(
+        reader: *mut IndexedBatchReader,
+        dest_dir: *const c_char,
+        dest_queue: *const c_char,
+        start: i64,
+        end: i64,
+        start_index_mode: c_int,
+        include: BatchQueueFilterFn,
+        exclude: BatchQueueFilterFn,
+        ctx: *mut c_void,
+        write_rt: *mut Runtime,
+        read_rt: *mut Runtime,
+        allow_append: c_int,
     ) -> i64;
 }
 
@@ -759,8 +793,10 @@ extern "C" {
         directory: *const c_char,
         queue_name: *const c_char,
         start_index: i64,
+        start_index_mode: c_int,
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
+        allow_append: c_int,
     ) -> i64;
 
     pub fn batch_queue_transfer_import_flat_stream(
@@ -768,8 +804,10 @@ extern "C" {
         directory: *const c_char,
         queue_name: *const c_char,
         start_index: i64,
+        start_index_mode: c_int,
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
+        allow_append: c_int,
     ) -> i64;
 
     pub fn batch_queue_transfer_copy(
@@ -784,6 +822,22 @@ extern "C" {
         ctx: *mut c_void,
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
+        allow_append: c_int,
+    ) -> i64;
+
+    pub fn batch_queue_transfer_copy_normal_to_batch(
+        reader: *mut IndexedReader,
+        dest_dir: *const c_char,
+        dest_queue: *const c_char,
+        start: i64,
+        end: i64,
+        start_index_mode: c_int,
+        include: BatchQueueFilterFn,
+        exclude: BatchQueueFilterFn,
+        ctx: *mut c_void,
+        write_rt: *mut Runtime,
+        read_rt: *mut Runtime,
+        allow_append: c_int,
     ) -> i64;
 }
 
@@ -793,6 +847,8 @@ extern "C" {
     pub fn queue_meta_open_ro(
         directory: *const c_char,
         queue_name: *const c_char,
+        expected_type: u8,
+        out_err: *mut c_int,
     ) -> *mut QueueMeta;
 
     pub fn queue_meta_close(m: *mut QueueMeta);

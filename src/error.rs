@@ -48,6 +48,9 @@ pub enum MmapError {
 
     /// The runtime failed to stop within the configured timeout.
     RuntimeCloseTimeout,
+
+    /// The destination queue already exists and allow_append was not set.
+    Exists,
 }
 
 impl fmt::Display for MmapError {
@@ -65,6 +68,7 @@ impl fmt::Display for MmapError {
             MmapError::Io(e) => write!(f, "I/O error: {}", e),
             MmapError::Internal(msg) => write!(f, "internal error: {}", msg),
             MmapError::RuntimeCloseTimeout => write!(f, "runtime failed to stop within timeout"),
+            MmapError::Exists => write!(f, "destination queue already exists"),
         }
     }
 }
@@ -84,6 +88,8 @@ impl std::error::Error for MmapError {
 /// through this function to get a consistent error type.
 pub(crate) fn map_rc(rc: i32) -> MmapError {
     match rc {
+        -7 => MmapError::FileNotFound,
+        -6 => MmapError::Exists,
         -5 => MmapError::SchemaMismatch,
         -4 => MmapError::Corrupt("on-disk corruption detected".into()),
         -3 => MmapError::QueueClosed,
