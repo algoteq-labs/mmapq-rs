@@ -10,6 +10,41 @@ use crate::ffi;
 use crate::reader::IndexedReader;
 use crate::batch::batch_reader::IndexedBatchReader;
 
+pub use ffi::ConflictBehavior;
+
+/// A Rust closure that maps a source appender ID to a destination appender ID.
+/// Return `None` for auto-assign, or `Some(id)` for a specific ID.
+pub type AppenderIdMapperFn = Box<dyn Fn(u16) -> Option<u8>>;
+
+unsafe extern "C" fn mapper_trampoline(source_aid: u16, ctx: *mut std::ffi::c_void) -> i32 {
+    if ctx.is_null() {
+        return source_aid as i32;
+    }
+    let cb = &*(ctx as *mut AppenderIdMapperFn);
+    match cb(source_aid) {
+        Some(id) => id as i32,
+        None => ffi::APPENDER_ID_AUTO,
+    }
+}
+
+/// Prepare a mapper callback and context for FFI.
+/// Returns (callback_fn, context_ptr, box_to_keep_alive).
+/// The box MUST live until the FFI call returns.
+fn setup_mapper(mapper: Option<AppenderIdMapperFn>)
+    -> (ffi::AppenderIdMapper, *mut std::ffi::c_void, Option<Box<AppenderIdMapperFn>>)
+{
+    match mapper {
+        Some(f) => {
+            let b = Box::new(f);
+            let ptr = Box::as_ref(&b) as *const AppenderIdMapperFn as *mut std::ffi::c_void;
+            (Some(mapper_trampoline as unsafe extern "C" fn(_, _) -> _),
+             ptr,
+             Some(b)) // keep alive
+        }
+        None => (None, std::ptr::null_mut(), None),
+    }
+}
+
 /// Controls how start indices are mapped during transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartIndexMode {
@@ -74,12 +109,18 @@ impl QueueTransfer {
     /// The start index is determined automatically:
     ///   REBASE  → 0
     ///   PRESERVE → the stream header's start_index
+    ///
+    /// `mapper` maps source appender IDs to destination IDs. Return `None` from
+    /// the closure for auto-assign. Pass `None` for identity mapping.
+    /// `on_conflict` controls behaviour when the mapped ID is already in use.
     pub fn import(
         stream_path: &str,
         directory: &str,
         queue_name: &str,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let path = CString::new(stream_path)
             .map_err(|_| MmapError::Internal("path contains null byte".into()))?;
@@ -94,6 +135,7 @@ impl QueueTransfer {
         }
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::queue_transfer_import(
@@ -101,6 +143,7 @@ impl QueueTransfer {
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 
@@ -121,6 +164,8 @@ impl QueueTransfer {
         queue_name: &str,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let path = CString::new(stream_path)
             .map_err(|_| MmapError::Internal("path contains null byte".into()))?;
@@ -135,6 +180,7 @@ impl QueueTransfer {
         }
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::queue_transfer_import_batch_stream(
@@ -142,6 +188,7 @@ impl QueueTransfer {
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 
@@ -163,6 +210,8 @@ impl QueueTransfer {
         to_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let dir = CString::new(dest_dir)
             .map_err(|_| MmapError::Internal("dest_dir contains null byte".into()))?;
@@ -170,6 +219,7 @@ impl QueueTransfer {
             .map_err(|_| MmapError::Internal("dest_queue contains null byte".into()))?;
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::queue_transfer_copy(
@@ -178,6 +228,7 @@ impl QueueTransfer {
                 None, None, std::ptr::null_mut(),
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 
@@ -198,6 +249,8 @@ impl QueueTransfer {
         to_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let dir = CString::new(dest_dir)
             .map_err(|_| MmapError::Internal("dest_dir contains null byte".into()))?;
@@ -205,6 +258,7 @@ impl QueueTransfer {
             .map_err(|_| MmapError::Internal("dest_queue contains null byte".into()))?;
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::queue_transfer_copy_batch_to_normal(
@@ -213,6 +267,7 @@ impl QueueTransfer {
                 None, None, std::ptr::null_mut(),
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 
@@ -274,6 +329,8 @@ impl BatchQueueTransfer {
         queue_name: &str,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let path = CString::new(stream_path)
             .map_err(|_| MmapError::Internal("path contains null byte".into()))?;
@@ -288,6 +345,7 @@ impl BatchQueueTransfer {
         }
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::batch_queue_transfer_import(
@@ -295,6 +353,7 @@ impl BatchQueueTransfer {
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 
@@ -315,6 +374,8 @@ impl BatchQueueTransfer {
         queue_name: &str,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let path = CString::new(stream_path)
             .map_err(|_| MmapError::Internal("path contains null byte".into()))?;
@@ -329,6 +390,7 @@ impl BatchQueueTransfer {
         }
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::batch_queue_transfer_import_flat_stream(
@@ -336,6 +398,7 @@ impl BatchQueueTransfer {
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 
@@ -357,6 +420,8 @@ impl BatchQueueTransfer {
         to_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let dir = CString::new(dest_dir)
             .map_err(|_| MmapError::Internal("dest_dir contains null byte".into()))?;
@@ -364,6 +429,7 @@ impl BatchQueueTransfer {
             .map_err(|_| MmapError::Internal("dest_queue contains null byte".into()))?;
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::batch_queue_transfer_copy(
@@ -372,6 +438,7 @@ impl BatchQueueTransfer {
                 None, None, std::ptr::null_mut(),
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 
@@ -392,6 +459,8 @@ impl BatchQueueTransfer {
         to_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
+        mapper: Option<AppenderIdMapperFn>,
+        on_conflict: ConflictBehavior,
     ) -> Result<u64, MmapError> {
         let dir = CString::new(dest_dir)
             .map_err(|_| MmapError::Internal("dest_dir contains null byte".into()))?;
@@ -399,6 +468,7 @@ impl BatchQueueTransfer {
             .map_err(|_| MmapError::Internal("dest_queue contains null byte".into()))?;
 
         let mode = to_c_mode(start_index_mode);
+        let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
             ffi::batch_queue_transfer_copy_normal_to_batch(
@@ -407,6 +477,7 @@ impl BatchQueueTransfer {
                 None, None, std::ptr::null_mut(),
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
+                cb, ctx, on_conflict,
             )
         };
 

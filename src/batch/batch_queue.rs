@@ -72,6 +72,24 @@ impl IndexedBatchQueue {
         })
     }
 
+    /// Create a batch appender with a specific lane ID.
+    pub fn create_appender_with_id(
+        &self,
+        appender_id: u8,
+    ) -> Result<super::batch_appender::IndexedBatchAppender, MmapError> {
+        let ptr = unsafe {
+            ffi::indexed_batch_queue_create_appender_with_id(self.inner, appender_id)
+        };
+        if ptr.is_null() {
+            return Err(MmapError::IdInUse);
+        }
+        Ok(super::batch_appender::IndexedBatchAppender {
+            inner: ptr,
+            _runtime: self._write_rt.clone(),
+            _not_send: PhantomData,
+        })
+    }
+
     /// Create a batch poller for sequential consumption.
     pub fn create_poller(&self) -> Result<super::batch_poller::IndexedBatchPoller, MmapError> {
         let ptr = unsafe { ffi::indexed_batch_queue_create_poller(self.inner) };

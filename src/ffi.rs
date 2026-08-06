@@ -81,6 +81,19 @@ pub const BATCH_ENTRY_ERROR: c_int = 3;
 pub const QUEUE_TRANSFER_REBASE: c_int = 0;
 pub const QUEUE_TRANSFER_PRESERVE: c_int = 1;
 
+pub const APPENDER_ID_AUTO: i32 = -1;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConflictBehavior {
+    Auto = 0,
+    Abort = 1,
+}
+
+pub type AppenderIdMapper = Option<
+    unsafe extern "C" fn(source_aid: u16, ctx: *mut c_void) -> i32,
+>;
+
 /* ── Callback types ───────────────────────────────────────────────────────── */
 
 pub type MessageHandler = Option<
@@ -161,6 +174,11 @@ pub struct BatchReadingContext {
     pub batch_offset: i64,
     /// Number of messages in the batch.
     pub message_count: i32,
+    /// Per-lane appender ID that wrote this batch (0–255, same encoding as
+    /// single-message `ReadingContext.appender_id`). Used by transfer copy
+    /// functions to preserve lane assignment across batch queue copies.
+    pub appender_id: u8,
+    _reserved: [u8; 3],
     /// Iterator positioned before message 0 — advance before reading.
     pub batch_iterator: BatchPayloadIterator,
 }
@@ -465,6 +483,11 @@ extern "C" {
         q: *mut IndexedBatchQueue,
     ) -> *mut IndexedBatchAppender;
 
+    pub fn indexed_batch_queue_create_appender_with_id(
+        q: *mut IndexedBatchQueue,
+        appender_id: u8,
+    ) -> *mut IndexedBatchAppender;
+
     pub fn indexed_batch_queue_create_poller(
         q: *mut IndexedBatchQueue,
     ) -> *mut IndexedBatchPoller;
@@ -717,6 +740,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 
     pub fn queue_transfer_import_batch_stream(
@@ -727,6 +753,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 
     pub fn queue_transfer_copy(
@@ -742,6 +771,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 
     pub fn queue_transfer_copy_batch_to_normal(
@@ -757,6 +789,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 }
 
@@ -794,6 +829,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 
     pub fn batch_queue_transfer_import_flat_stream(
@@ -804,6 +842,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 
     pub fn batch_queue_transfer_copy(
@@ -819,6 +860,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 
     pub fn batch_queue_transfer_copy_normal_to_batch(
@@ -834,6 +878,9 @@ extern "C" {
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
         allow_append: c_int,
+        mapper: AppenderIdMapper,
+        mapper_ctx: *mut c_void,
+        on_conflict: ConflictBehavior,
     ) -> i64;
 }
 

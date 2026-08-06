@@ -25,6 +25,20 @@ impl IndexedBatchReader {
         self.inner
     }
 
+    /// Return the per-lane appender ID that wrote the last batch read.
+    ///
+    /// Each appender in a queue has a unique lane ID (0–255). Payload files
+    /// are per-appender (`payload_<id>`). This value is populated by the most
+    /// recent `read()` / `read_first()` / `read_last()` call and is valid
+    /// only when the returned status was `BATCH_ENTRY_AVAILABLE`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the reader has already been closed.
+    pub fn appender_id(&self) -> u8 {
+        unsafe { (*self.ctx.get()).appender_id }
+    }
+
     /// Read the batch at the given index.
     pub fn read(&self, index: i64) -> Result<Option<BatchMessage<'_>>, MmapError> {
         let ctx = self.ctx.get();

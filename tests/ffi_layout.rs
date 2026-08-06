@@ -58,12 +58,14 @@ fn verify_batch_payload_iterator_size() {
 //     BatchEntryStatus     status;          //  8: i32  (4)
 //     int64_t              batch_offset;    // 16: i64  (8) — padded from 12
 //     int32_t              message_count;   // 24: i32  (4)
-//     BatchPayloadIterator batch_iterator;  // 32: struct (80 bytes) — padded from 28
+//     uint8_t              appender_id;     // 28: u8   (1)
+//     uint8_t              reserved[3];     // 29: u8[3](3)
+//     BatchPayloadIterator batch_iterator;  // 32: struct (80 bytes)
 // } BatchReadingContext;                     // total: 112 bytes
 //
 // On x86-64 with GCC, the System V ABI requires 8-byte alignment for int64_t
-// and [u64;10], inserting padding after status (offset 8→16) and after
-// message_count (offset 24→32).
+// and [u64;10], inserting padding after status (offset 8→16).
+// appender_id + reserved fill the gap before batch_iterator at offset 32.
 
 #[test]
 fn verify_batch_reading_context_layout() {
@@ -87,11 +89,15 @@ fn verify_batch_reading_context_layout() {
         "BatchReadingContext.message_count must be at offset 24"
     );
     assert_eq!(
+        offset_of(&ctx, &ctx.appender_id), 28,
+        "BatchReadingContext.appender_id must be at offset 28"
+    );
+    assert_eq!(
         offset_of(&ctx, &ctx.batch_iterator), 32,
-        "BatchReadingContext.batch_iterator must be at offset 32 (after padding)"
+        "BatchReadingContext.batch_iterator must be at offset 32"
     );
     assert_eq!(
         size_of::<ffi::BatchReadingContext>(), 112,
-        "BatchReadingContext must be 112 bytes: header(24) + padding(8) + iterator(80)"
+        "BatchReadingContext must be 112 bytes"
     );
 }

@@ -1,7 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use mmapq::{
-    transfer::{QueueTransfer, BatchQueueTransfer, StartIndexMode},
+    transfer::{QueueTransfer, BatchQueueTransfer, StartIndexMode, ConflictBehavior},
     batch::IndexedBatchQueue,
     IndexedQueue, QueueConfig,
     MmapError,
@@ -57,7 +57,7 @@ fn test_export_import_roundtrip() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("xfer_import");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 100);
 }
 
@@ -77,7 +77,7 @@ fn test_export_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("export_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     verify_normal(&dest, 0, 0);
 }
@@ -96,7 +96,7 @@ fn test_import_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     verify_normal(&dest, si, si + 1);
 }
@@ -113,8 +113,8 @@ fn test_import_allow_append_false() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_no_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
-    let e = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).expect_err("exists");
+    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let e = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).expect_err("exists");
     assert!(matches!(e, MmapError::Exists));
 }
 
@@ -130,8 +130,8 @@ fn test_import_allow_append_true() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, true).unwrap();
+    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, true, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
 }
 
@@ -145,7 +145,7 @@ fn test_copy_roundtrip() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("copy_roundtrip_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false).unwrap();
+    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     drop(r); drop(q_src);
 }
@@ -161,7 +161,7 @@ fn test_copy_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("copy_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false).unwrap();
+    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     verify_normal(&dest, si, si + 1);
     drop(r); drop(q_src);
@@ -176,8 +176,8 @@ fn test_copy_allow_append() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("copy_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false).unwrap();
-    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, true).unwrap();
+    QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, true, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     drop(r); drop(q_src);
 }
@@ -194,7 +194,7 @@ fn test_batch_export_import_roundtrip() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_import");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
+    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
 }
 
@@ -213,7 +213,7 @@ fn test_batch_export_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_export_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
+    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     verify_batch(&dest, 0, 0);
 }
@@ -230,7 +230,7 @@ fn test_batch_import_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_import_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
+    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
 }
 
@@ -243,7 +243,7 @@ fn test_batch_copy_roundtrip() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_copy_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false).unwrap();
+    let n = BatchQueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     drop(r); drop(q_src);
 }
@@ -258,7 +258,7 @@ fn test_batch_copy_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_copy_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false).unwrap();
+    let n = BatchQueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     verify_batch(&dest, si, si);
     drop(r); drop(q_src);
@@ -273,7 +273,7 @@ fn test_copy_batch_to_normal() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("b2n_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy_from_batch(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false).unwrap();
+    let n = QueueTransfer::copy_from_batch(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     drop(r); drop(bq_src);
 }
@@ -288,7 +288,7 @@ fn test_copy_batch_to_normal_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("b2n_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy_from_batch(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false).unwrap();
+    let n = QueueTransfer::copy_from_batch(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     verify_normal(&dest, si, si + 1);
     drop(r); drop(bq_src);
@@ -304,7 +304,7 @@ fn test_copy_normal_to_batch() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("n2b_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy_from_normal(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false).unwrap();
+    let n = BatchQueueTransfer::copy_from_normal(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     drop(r); drop(q_src);
 }
@@ -320,7 +320,7 @@ fn test_copy_normal_to_batch_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("n2b_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy_from_normal(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false).unwrap();
+    let n = BatchQueueTransfer::copy_from_normal(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     verify_batch(&dest, si, si + 1);
     drop(r); drop(q_src);
@@ -348,6 +348,7 @@ fn test_copy_batch_to_normal_preserve_nonzero() {
     std::fs::create_dir_all(&dest).unwrap();
     let n = QueueTransfer::copy_from_batch(
         &r, dest.to_str().unwrap(), "q", 100, 100, StartIndexMode::Preserve, false,
+        None, ConflictBehavior::Auto,
     ).unwrap();
     assert_eq!(n, 1);
     verify_normal(&dest, 100, 100);
@@ -375,6 +376,7 @@ fn test_copy_normal_to_batch_preserve_nonzero() {
     std::fs::create_dir_all(&dest).unwrap();
     let n = BatchQueueTransfer::copy_from_normal(
         &r, dest.to_str().unwrap(), "q", 100, li, StartIndexMode::Preserve, false,
+        None, ConflictBehavior::Auto,
     ).unwrap();
     assert_eq!(n, 1);
     verify_batch(&dest, 100, 100);
@@ -404,6 +406,7 @@ fn test_import_batch_stream_preserve_nonzero() {
     std::fs::create_dir_all(&dest).unwrap();
     let n = QueueTransfer::import_from_batch(
         ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false,
+        None, ConflictBehavior::Auto,
     ).unwrap();
     assert_eq!(n, 1);
     verify_normal(&dest, 100, 100);
@@ -432,7 +435,217 @@ fn test_import_flat_to_batch_preserve_nonzero() {
     std::fs::create_dir_all(&dest).unwrap();
     let n = BatchQueueTransfer::import_from_flat(
         ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false,
+        None, ConflictBehavior::Auto,
     ).unwrap();
     assert_eq!(n, 1);
     verify_batch(&dest, 100, 100);
+}
+
+// ── Appender ID preservation tests ────────────────────────────────────────
+
+#[test]
+fn test_import_preserves_appender_ids() {
+    let (q_src, src_dir) = create_queue("aid_preserve");
+    let mut a1 = q_src.create_appender().unwrap();
+    let mut a2 = q_src.create_appender().unwrap();
+    let id1 = a1.id();
+    let id2 = a2.id();
+    assert_ne!(id1, id2);
+
+    a1.append(b"from-a1").unwrap();
+    a2.append(b"from-a2").unwrap();
+    a1.append(b"from-a1-2").unwrap();
+    drop(a1); drop(a2);
+
+    let r = q_src.create_reader().unwrap();
+    let ep = src_dir.join("export.dat");
+    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 2, StartIndexMode::Rebase).unwrap();
+    drop(r); drop(q_src);
+
+    let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("aid_preserve_dest");
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).unwrap();
+    let n = QueueTransfer::import(
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
+        StartIndexMode::Rebase, false, None, ConflictBehavior::Auto,
+    ).unwrap();
+    assert_eq!(n, 3);
+
+    // Verify both appender IDs are present in the imported queue
+    let q_dest = IndexedQueue::create(
+        QueueConfig::new(dest.to_str().unwrap(), "q"),
+    ).unwrap();
+    let r_dest = q_dest.create_reader().unwrap();
+    let mut seen_id1 = false;
+    let mut seen_id2 = false;
+    for i in 0..=r_dest.last_index() {
+        let msg = r_dest.read(i).unwrap().unwrap();
+        if msg.appender_id() == id1 { seen_id1 = true; }
+        if msg.appender_id() == id2 { seen_id2 = true; }
+    }
+    assert!(seen_id1 && seen_id2);
+    drop(r_dest); drop(q_dest);
+}
+
+#[test]
+fn test_import_merge_via_mapper() {
+    let (q_src, src_dir) = create_queue("aid_merge");
+    let mut a1 = q_src.create_appender().unwrap();
+    let mut a2 = q_src.create_appender().unwrap();
+    a1.append(b"from-a1").unwrap();
+    a2.append(b"from-a2").unwrap();
+    drop(a1); drop(a2);
+
+    let r = q_src.create_reader().unwrap();
+    let ep = src_dir.join("export.dat");
+    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 1, StartIndexMode::Rebase).unwrap();
+    drop(r); drop(q_src);
+
+    let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("aid_merge_dest");
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).unwrap();
+
+    // Mapper that returns None (auto-assign) for all
+    let mapper: Box<dyn Fn(u16) -> Option<u8>> = Box::new(|_| None);
+    let n = QueueTransfer::import(
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
+        StartIndexMode::Rebase, false, Some(mapper), ConflictBehavior::Auto,
+    ).unwrap();
+    assert_eq!(n, 2);
+}
+
+#[test]
+fn test_import_auto_on_conflict() {
+    // Create destination with appender ID 0 in use
+    let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("aid_auto_conflict");
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).unwrap();
+    let q_dest = IndexedQueue::create(QueueConfig::new(dest.to_str().unwrap(), "q")).unwrap();
+    let _existing = q_dest.create_appender_with_id(0).unwrap();
+
+    // Create source with appender ID 0
+    let (q_src, src_dir) = create_queue("aid_auto_src");
+    let mut a = q_src.create_appender().unwrap();
+    a.append(b"hello").unwrap();
+    drop(a);
+    let r = q_src.create_reader().unwrap();
+    let ep = src_dir.join("export.dat");
+    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    drop(r); drop(q_src);
+
+    // Import with CONFLICT_AUTO — should auto-assign since ID 0 is taken
+    let n = QueueTransfer::import(
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
+        StartIndexMode::Rebase, true, None, ConflictBehavior::Auto,
+    ).unwrap();
+    assert_eq!(n, 1);
+
+    // Verify the imported entry got a different appender ID (not 0, which is held)
+    let q_dest2 = IndexedQueue::create(
+        QueueConfig::new(dest.to_str().unwrap(), "q"),
+    ).unwrap();
+    let r_dest = q_dest2.create_reader().unwrap();
+    let msg = r_dest.read(0).unwrap().unwrap();
+    assert_ne!(msg.appender_id(), 0, "auto-assign should not use the held ID 0");
+    drop(r_dest); drop(q_dest2);
+
+    drop(_existing);
+    drop(q_dest);
+}
+
+#[test]
+fn test_import_abort_on_conflict() {
+    // Create destination with appender ID 0 in use
+    let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("aid_abort");
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).unwrap();
+    let q_dest = IndexedQueue::create(QueueConfig::new(dest.to_str().unwrap(), "q")).unwrap();
+    let _existing = q_dest.create_appender_with_id(0).unwrap();
+
+    // Create source with appender ID 0
+    let (q_src, src_dir) = create_queue("aid_abort_src");
+    let mut a = q_src.create_appender().unwrap();
+    a.append(b"hello").unwrap();
+    drop(a);
+    let r = q_src.create_reader().unwrap();
+    let ep = src_dir.join("export.dat");
+    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    drop(r); drop(q_src);
+
+    // Import with CONFLICT_ABORT — should get IdConflict error
+    let e = QueueTransfer::import(
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
+        StartIndexMode::Rebase, true, None, ConflictBehavior::Abort,
+    ).expect_err("expected IdConflict");
+    assert!(matches!(e, MmapError::IdConflict));
+    drop(_existing);
+    drop(q_dest);
+}
+
+#[test]
+fn test_batch_import_preserves_appender_ids() {
+    let (q_src, src_dir) = create_batch_queue("batch_aid");
+    let mut a1 = q_src.create_appender().unwrap();
+    let mut a2 = q_src.create_appender().unwrap();
+    let id1 = a1.id();
+    let id2 = a2.id();
+    assert_ne!(id1, id2);
+
+    { let mut b = a1.start_batch().unwrap(); b.append(b"a1").unwrap(); b.commit().unwrap(); }
+    { let mut b = a2.start_batch().unwrap(); b.append(b"a2").unwrap(); b.commit().unwrap(); }
+    drop(a1); drop(a2);
+
+    let r = q_src.create_reader().unwrap();
+    let ep = src_dir.join("export.dat");
+    BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 0, 1, StartIndexMode::Rebase).unwrap();
+    drop(r); drop(q_src);
+
+    let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_aid_dest");
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).unwrap();
+    let n = BatchQueueTransfer::import(
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
+        StartIndexMode::Rebase, false, None, ConflictBehavior::Auto,
+    ).unwrap();
+    assert_eq!(n, 2);
+
+    // Verify via reader
+    let q_dest = IndexedBatchQueue::create(
+        QueueConfig::new(dest.to_str().unwrap(), "q"),
+    ).unwrap();
+    let r_dest = q_dest.create_reader().unwrap();
+    let _b0 = r_dest.read(0).unwrap().unwrap();
+    let got0 = r_dest.appender_id();
+    let _b1 = r_dest.read(1).unwrap().unwrap();
+    let got1 = r_dest.appender_id();
+    assert!((got0 == id1 && got1 == id2) || (got0 == id2 && got1 == id1));
+    drop(r_dest); drop(q_dest);
+}
+
+#[test]
+fn test_batch_import_abort_on_conflict() {
+    let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_abort");
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).unwrap();
+    let q_dest = IndexedBatchQueue::create(
+        QueueConfig::new(dest.to_str().unwrap(), "q"),
+    ).unwrap();
+    let _existing = q_dest.create_appender_with_id(0).unwrap();
+
+    let (q_src, src_dir) = create_batch_queue("batch_abort_src");
+    let mut a = q_src.create_appender().unwrap();
+    { let mut b = a.start_batch().unwrap(); b.append(b"hello").unwrap(); b.commit().unwrap(); }
+    drop(a);
+    let r = q_src.create_reader().unwrap();
+    let ep = src_dir.join("export.dat");
+    BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    drop(r); drop(q_src);
+
+    let e = BatchQueueTransfer::import(
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
+        StartIndexMode::Rebase, true, None, ConflictBehavior::Abort,
+    ).expect_err("expected IdConflict");
+    assert!(matches!(e, MmapError::IdConflict));
+    drop(_existing);
+    drop(q_dest);
 }
