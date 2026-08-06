@@ -6,6 +6,7 @@ use mmapq::{
     IndexedQueue, QueueConfig,
     MmapError,
 };
+use mmapq::ffi;
 
 fn create_queue(basename: &str) -> (IndexedQueue, PathBuf) {
     let dir = std::env::temp_dir().join("mmap-rs-transfer-test").join(basename);
@@ -648,4 +649,55 @@ fn test_batch_import_abort_on_conflict() {
     assert!(matches!(e, MmapError::IdConflict));
     drop(_existing);
     drop(q_dest);
+}
+#[test]
+fn test_export_with_filter() {
+    let (q_src, src_dir) = create_queue("export_filter");
+    let mut a = q_src.create_appender().unwrap();
+    a.append(b"keep-1").unwrap();
+    a.append(b"discard").unwrap();
+    a.append(b"keep-2").unwrap();
+    let li = a.current_index();
+    drop(a);
+
+    unsafe extern "C" fn keep_filter(
+        _idx: i64, data: *const std::ffi::c_void,
+        length: i32, _ctx: *mut std::ffi::c_void,
+    ) -> i32 {
+        let slice = std::slice::from_raw_parts(data as *const u8, length as usize);
+        if slice.starts_with(b"keep") { 1 } else { 0 }
+    }
+
+    let r = q_src.create_reader().unwrap();
+    let ep = src_dir.join("export_filtered.dat");
+    let cpath = std::ffi::CString::new(ep.to_str().unwrap()).unwrap();
+    let file = unsafe {
+        libc::fopen(
+            cpath.as_ptr(),
+            b"wb ".as_ptr() as *const _,
+        )
+    };
+    assert!(!file.is_null());
+
+    let n = unsafe {
+        ffi::queue_transfer_export(
+            r.as_ptr(), file, 0, li, 0,
+            Some(keep_filter as unsafe extern "C" fn(_, _, _, _) -> _),
+            None,
+            std::ptr::null_mut(),
+        )
+    };
+    unsafe { libc::fclose(file) };
+    assert_eq!(n, 2);
+
+    drop(r); drop(q_src);
+
+    let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("export_filter_dest");
+    let _ = std::fs::remove_dir_all(&dest);
+    std::fs::create_dir_all(&dest).unwrap();
+    let n = QueueTransfer::import(
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
+        StartIndexMode::Rebase, false, None, ConflictBehavior::Auto,
+    ).unwrap();
+    assert_eq!(n, 2);
 }

@@ -804,8 +804,8 @@ extern "C" {
         start: i64,
         end: i64,
         start_index_mode: c_int,
-        include: QueueFilterFn,
-        exclude: QueueFilterFn,
+        include: BatchQueueFilterFn,
+        exclude: BatchQueueFilterFn,
         ctx: *mut c_void,
     ) -> i64;
 
@@ -854,8 +854,8 @@ extern "C" {
         start: i64,
         end: i64,
         start_index_mode: c_int,
-        include: QueueFilterFn,
-        exclude: QueueFilterFn,
+        include: BatchQueueFilterFn,
+        exclude: BatchQueueFilterFn,
         ctx: *mut c_void,
         write_rt: *mut Runtime,
         read_rt: *mut Runtime,
