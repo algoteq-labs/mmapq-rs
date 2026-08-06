@@ -57,7 +57,7 @@ fn test_export_import_roundtrip() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("xfer_import");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Rebase, false).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
     assert_eq!(n, 100);
 }
 
@@ -77,7 +77,7 @@ fn test_export_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("export_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Preserve, false).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
     assert_eq!(n, 1);
     verify_normal(&dest, 0, 0);
 }
@@ -96,7 +96,7 @@ fn test_import_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", si, StartIndexMode::Preserve, false).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
     assert_eq!(n, 2);
     verify_normal(&dest, si, si + 1);
 }
@@ -113,8 +113,8 @@ fn test_import_allow_append_false() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_no_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Rebase, false).unwrap();
-    let e = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Rebase, false).expect_err("exists");
+    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
+    let e = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).expect_err("exists");
     assert!(matches!(e, MmapError::Exists));
 }
 
@@ -130,8 +130,8 @@ fn test_import_allow_append_true() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Rebase, false).unwrap();
-    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Rebase, true).unwrap();
+    QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
+    let n = QueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, true).unwrap();
     assert_eq!(n, 1);
 }
 
@@ -194,7 +194,7 @@ fn test_batch_export_import_roundtrip() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_import");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Rebase, false).unwrap();
+    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Rebase, false).unwrap();
     assert_eq!(n, 1);
 }
 
@@ -213,7 +213,7 @@ fn test_batch_export_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_export_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Preserve, false).unwrap();
+    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
     assert_eq!(n, 1);
     verify_batch(&dest, 0, 0);
 }
@@ -230,7 +230,7 @@ fn test_batch_import_preserve() {
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_import_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 0, StartIndexMode::Preserve, false).unwrap();
+    let n = BatchQueueTransfer::import(ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false).unwrap();
     assert_eq!(n, 1);
 }
 
@@ -403,7 +403,7 @@ fn test_import_batch_stream_preserve_nonzero() {
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
     let n = QueueTransfer::import_from_batch(
-        ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 100, StartIndexMode::Preserve, false,
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false,
     ).unwrap();
     assert_eq!(n, 1);
     verify_normal(&dest, 100, 100);
@@ -431,7 +431,7 @@ fn test_import_flat_to_batch_preserve_nonzero() {
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
     let n = BatchQueueTransfer::import_from_flat(
-        ep.to_str().unwrap(), dest.to_str().unwrap(), "q", 100, StartIndexMode::Preserve, false,
+        ep.to_str().unwrap(), dest.to_str().unwrap(), "q", StartIndexMode::Preserve, false,
     ).unwrap();
     assert_eq!(n, 1);
     verify_batch(&dest, 100, 100);

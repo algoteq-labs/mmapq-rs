@@ -70,11 +70,14 @@ impl QueueTransfer {
     }
 
     /// Import entries from a flat stream file into a queue.
+    ///
+    /// The start index is determined automatically:
+    ///   REBASE  → 0
+    ///   PRESERVE → the stream header's start_index
     pub fn import(
         stream_path: &str,
         directory: &str,
         queue_name: &str,
-        start_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
     ) -> Result<u64, MmapError> {
@@ -95,7 +98,7 @@ impl QueueTransfer {
         let result = unsafe {
             ffi::queue_transfer_import(
                 file, dir.as_ptr(), name.as_ptr(),
-                start_index, mode,
+                mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
             )
@@ -116,7 +119,6 @@ impl QueueTransfer {
         stream_path: &str,
         directory: &str,
         queue_name: &str,
-        start_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
     ) -> Result<u64, MmapError> {
@@ -137,7 +139,7 @@ impl QueueTransfer {
         let result = unsafe {
             ffi::queue_transfer_import_batch_stream(
                 file, dir.as_ptr(), name.as_ptr(),
-                start_index, mode,
+                mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
             )
@@ -270,7 +272,6 @@ impl BatchQueueTransfer {
         stream_path: &str,
         directory: &str,
         queue_name: &str,
-        start_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
     ) -> Result<u64, MmapError> {
@@ -291,7 +292,7 @@ impl BatchQueueTransfer {
         let result = unsafe {
             ffi::batch_queue_transfer_import(
                 file, dir.as_ptr(), name.as_ptr(),
-                start_index, mode,
+                mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
             )
@@ -312,7 +313,6 @@ impl BatchQueueTransfer {
         stream_path: &str,
         directory: &str,
         queue_name: &str,
-        start_index: i64,
         start_index_mode: StartIndexMode,
         allow_append: bool,
     ) -> Result<u64, MmapError> {
@@ -333,7 +333,7 @@ impl BatchQueueTransfer {
         let result = unsafe {
             ffi::batch_queue_transfer_import_flat_stream(
                 file, dir.as_ptr(), name.as_ptr(),
-                start_index, mode,
+                mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
                 allow_append as i32,
             )
