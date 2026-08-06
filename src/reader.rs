@@ -26,7 +26,7 @@ pub struct IndexedReader {
 
 impl IndexedReader {
     /// Return the raw C pointer (for transfer module use).
-    pub(crate) fn as_ptr(&self) -> *mut ffi::IndexedReader {
+    pub fn as_ptr(&self) -> *mut ffi::IndexedReader {
         self.inner
     }
 
