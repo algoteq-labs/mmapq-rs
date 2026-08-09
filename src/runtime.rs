@@ -76,6 +76,7 @@ impl Runtime {
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
         let rc = unsafe { ffi::runtime_clone(ptr, &mut cloned) };
         if rc != 0 {
+            unsafe { ffi::runtime_destroy(ptr) };
             return Err(map_rc(rc));
         }
         Ok(Runtime { inner: cloned })
@@ -94,6 +95,7 @@ impl Runtime {
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
         let rc = unsafe { ffi::runtime_clone(ptr, &mut cloned) };
         if rc != 0 {
+            unsafe { ffi::runtime_destroy(ptr) };
             return Err(map_rc(rc));
         }
         Ok(Runtime { inner: cloned })
