@@ -100,15 +100,12 @@ impl IndexedQueue {
     }
 
     /// Create a new appender with a fresh ID from the pool.
-    /// Returns `Err(PoolExhausted)` if all 256 IDs are in use.
+    /// Returns `Err(IdConflict)` if all 256 IDs are in use.
     pub fn create_appender(&self) -> Result<super::appender::IndexedAppender, MmapError> {
         let mut ptr: *mut ffi::IndexedAppender = std::ptr::null_mut();
         let rc = unsafe { ffi::indexed_queue_create_appender(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
-        }
-        if ptr.is_null() {
-            return Err(MmapError::PoolExhausted);
         }
         Ok(super::appender::IndexedAppender {
             inner: ptr,
@@ -118,7 +115,7 @@ impl IndexedQueue {
     }
 
     /// Create an appender with a specific ID.
-    /// Returns `Err(IdInUse)` if the ID is already taken.
+    /// Returns `Err(IdConflict)` if the ID is already in use.
     pub fn create_appender_with_id(
         &self,
         appender_id: u8,
@@ -128,9 +125,6 @@ impl IndexedQueue {
             unsafe { ffi::indexed_queue_create_appender_with_id(self.inner, appender_id, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
-        }
-        if ptr.is_null() {
-            return Err(MmapError::IdInUse);
         }
         Ok(super::appender::IndexedAppender {
             inner: ptr,
@@ -147,9 +141,6 @@ impl IndexedQueue {
         if rc != 0 {
             return Err(map_rc(rc));
         }
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_poller returned NULL".into()));
-        }
         Ok(super::poller::IndexedPoller {
             inner: ptr,
             _runtime: self._read_rt.clone(),
@@ -164,9 +155,6 @@ impl IndexedQueue {
         let rc = unsafe { ffi::indexed_queue_create_reader(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
-        }
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_reader returned NULL".into()));
         }
         Ok(super::reader::IndexedReader {
             inner: ptr,
@@ -189,9 +177,6 @@ impl IndexedQueue {
         let rc = unsafe { ffi::indexed_queue_create_archiver(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
-        }
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_archiver returned NULL".into()));
         }
         Ok(super::archiver::IndexedArchiver {
             inner: ptr,

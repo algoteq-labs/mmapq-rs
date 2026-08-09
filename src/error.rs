@@ -24,12 +24,6 @@ pub enum MmapError {
     /// An argument is invalid (e.g., zero-length data, NULL pointer).
     InvalidArgument,
 
-    /// All 256 appender IDs are in use.
-    PoolExhausted,
-
-    /// The requested appender ID is already acquired by another appender.
-    IdInUse,
-
     /// The queue has been closed and cannot accept new operations.
     QueueClosed,
 
@@ -67,8 +61,6 @@ impl fmt::Display for MmapError {
             MmapError::InvalidArgument => write!(f, "invalid argument (zero-length data, NULL pointer, etc.)"),
             MmapError::FileNotFound => write!(f, "backing file does not exist"),
             MmapError::BeyondFileSize => write!(f, "position beyond current file size"),
-            MmapError::PoolExhausted => write!(f, "all 256 appender IDs are in use"),
-            MmapError::IdInUse => write!(f, "requested appender ID is already acquired"),
             MmapError::QueueClosed => write!(f, "queue has been closed"),
             MmapError::Corrupt(msg) => write!(f, "corruption: {}", msg),
             MmapError::SchemaMismatch => write!(f, "schema version or queue type mismatch (wrong queue kind, or file from an incompatible version)"),
