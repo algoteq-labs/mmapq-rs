@@ -76,13 +76,13 @@ impl IndexedAppender {
     ///
     /// `payload_offset` is the value returned by `append_uncommitted()`.
     /// Returns the queue index assigned to this message,
-    /// or `Err(MapTimedOut)` on mapping timeout.
+    /// or an `MMAPQ_*` error code on failure.
     pub fn commit(&mut self, payload_offset: i64) -> Result<i64, MmapError> {
         let n = unsafe { ffi::indexed_appender_commit(self.inner, payload_offset) };
         if n >= 0 {
             Ok(n)
         } else {
-            Err(MmapError::MapTimedOut)
+            Err(map_rc(n as i32))
         }
     }
 

@@ -5,7 +5,7 @@
 use std::ffi::CString;
 use std::marker::PhantomData;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 use crate::queue::QueueConfig;
 
@@ -33,7 +33,8 @@ impl IndexedBatchQueue {
         let name = CString::new(config.queue_name())
             .map_err(|_| MmapError::Internal("queue name contains null byte".into()))?;
 
-        let ptr = unsafe {
+        let mut ptr: *mut ffi::IndexedBatchQueue = std::ptr::null_mut();
+        let rc = unsafe {
             ffi::indexed_batch_queue_create(
                 dir.as_ptr(),
                 name.as_ptr(),
@@ -46,10 +47,11 @@ impl IndexedBatchQueue {
                 0,
                 std::ptr::null_mut(),
                 std::ptr::null_mut(),
+                &mut ptr,
             )
         };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("indexed_batch_queue_create returned NULL".into()));
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(IndexedBatchQueue {
             inner: ptr,
@@ -61,9 +63,10 @@ impl IndexedBatchQueue {
 
     /// Create a batch appender with a fresh ID from the pool.
     pub fn create_appender(&self) -> Result<super::batch_appender::IndexedBatchAppender, MmapError> {
-        let ptr = unsafe { ffi::indexed_batch_queue_create_appender(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::PoolExhausted);
+        let mut ptr: *mut ffi::IndexedBatchAppender = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_batch_queue_create_appender(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::batch_appender::IndexedBatchAppender {
             inner: ptr,
@@ -77,11 +80,12 @@ impl IndexedBatchQueue {
         &self,
         appender_id: u8,
     ) -> Result<super::batch_appender::IndexedBatchAppender, MmapError> {
-        let ptr = unsafe {
-            ffi::indexed_batch_queue_create_appender_with_id(self.inner, appender_id)
+        let mut ptr: *mut ffi::IndexedBatchAppender = std::ptr::null_mut();
+        let rc = unsafe {
+            ffi::indexed_batch_queue_create_appender_with_id(self.inner, appender_id, &mut ptr)
         };
-        if ptr.is_null() {
-            return Err(MmapError::IdInUse);
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::batch_appender::IndexedBatchAppender {
             inner: ptr,
@@ -92,9 +96,10 @@ impl IndexedBatchQueue {
 
     /// Create a batch poller for sequential consumption.
     pub fn create_poller(&self) -> Result<super::batch_poller::IndexedBatchPoller, MmapError> {
-        let ptr = unsafe { ffi::indexed_batch_queue_create_poller(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_poller returned NULL".into()));
+        let mut ptr: *mut ffi::IndexedBatchPoller = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_batch_queue_create_poller(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::batch_poller::IndexedBatchPoller {
             inner: ptr,
@@ -105,9 +110,10 @@ impl IndexedBatchQueue {
 
     /// Create a batch reader for random-access reads.
     pub fn create_reader(&self) -> Result<super::batch_reader::IndexedBatchReader, MmapError> {
-        let ptr = unsafe { ffi::indexed_batch_queue_create_reader(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_reader returned NULL".into()));
+        let mut ptr: *mut ffi::IndexedBatchReader = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_batch_queue_create_reader(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::batch_reader::IndexedBatchReader {
             inner: ptr,
@@ -118,9 +124,10 @@ impl IndexedBatchQueue {
 
     /// Create a batch archiver.
     pub fn create_archiver(&self) -> Result<super::batch_archiver::IndexedBatchArchiver, MmapError> {
-        let ptr = unsafe { ffi::indexed_batch_queue_create_archiver(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_archiver returned NULL".into()));
+        let mut ptr: *mut ffi::IndexedBatchArchiver = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_batch_queue_create_archiver(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::batch_archiver::IndexedBatchArchiver {
             inner: ptr,

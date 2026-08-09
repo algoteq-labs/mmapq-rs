@@ -192,11 +192,12 @@ extern "C" {
         close_timeout_ns: u64,
         on_close: Option<unsafe extern "C" fn(*mut Runtime, *mut c_void)>,
         on_close_ctx: *mut c_void,
-    ) -> *mut Runtime;
+        out: *mut *mut Runtime,
+    ) -> c_int;
 
     pub fn runtime_destroy(rt: *mut Runtime);
 
-    pub fn runtime_clone(rt: *mut Runtime) -> *mut Runtime;
+    pub fn runtime_clone(rt: *mut Runtime, out: *mut *mut Runtime) -> c_int;
 
     pub fn runtime_close(rt: *mut Runtime);
 
@@ -208,24 +209,26 @@ extern "C" {
 
     pub fn runtime_is_closed(rt: *const Runtime) -> c_int;
 
-    pub fn runtime_region_mapper() -> *mut Runtime;
+    pub fn runtime_region_mapper(out: *mut *mut Runtime) -> c_int;
 
-    pub fn runtime_metrics_processor() -> *mut Runtime;
+    pub fn runtime_metrics_processor(out: *mut *mut Runtime) -> c_int;
 
-    pub fn idle_strategy_busy_spin_create() -> *mut IdleStrategy;
+    pub fn idle_strategy_busy_spin_create(out: *mut *mut IdleStrategy) -> c_int;
 
-    pub fn idle_strategy_yield_create() -> *mut IdleStrategy;
+    pub fn idle_strategy_yield_create(out: *mut *mut IdleStrategy) -> c_int;
 
     pub fn idle_strategy_sleep_create(
         min_sleep_ns: u64,
         max_sleep_ns: u64,
-    ) -> *mut IdleStrategy;
+        out: *mut *mut IdleStrategy,
+    ) -> c_int;
 
     pub fn idle_strategy_backoff_create(
         spin_count: c_int,
         yield_count: c_int,
         max_sleep_ns: u64,
-    ) -> *mut IdleStrategy;
+        out: *mut *mut IdleStrategy,
+    ) -> c_int;
 
     pub fn idle_strategy_destroy(strategy: *mut IdleStrategy);
 }
@@ -245,29 +248,44 @@ extern "C" {
         archivable: c_int,
         write_runtime: *mut Runtime,
         read_runtime: *mut Runtime,
-    ) -> *mut IndexedQueue;
+        out_queue: *mut *mut IndexedQueue,
+    ) -> i32;
 
     pub fn indexed_queue_create_default(
         directory: *const c_char,
         queue_name: *const c_char,
         write_runtime: *mut Runtime,
         read_runtime: *mut Runtime,
-    ) -> *mut IndexedQueue;
+        out_queue: *mut *mut IndexedQueue,
+    ) -> i32;
 
     pub fn indexed_queue_close(q: *mut IndexedQueue);
 
-    pub fn indexed_queue_create_appender(q: *mut IndexedQueue) -> *mut IndexedAppender;
+    pub fn indexed_queue_create_appender(
+        q: *mut IndexedQueue,
+        out: *mut *mut IndexedAppender,
+    ) -> i32;
 
     pub fn indexed_queue_create_appender_with_id(
         q: *mut IndexedQueue,
         appender_id: u8,
-    ) -> *mut IndexedAppender;
+        out: *mut *mut IndexedAppender,
+    ) -> i32;
 
-    pub fn indexed_queue_create_poller(q: *mut IndexedQueue) -> *mut IndexedPoller;
+    pub fn indexed_queue_create_poller(
+        q: *mut IndexedQueue,
+        out: *mut *mut IndexedPoller,
+    ) -> i32;
 
-    pub fn indexed_queue_create_reader(q: *mut IndexedQueue) -> *mut IndexedReader;
+    pub fn indexed_queue_create_reader(
+        q: *mut IndexedQueue,
+        out: *mut *mut IndexedReader,
+    ) -> i32;
 
-    pub fn indexed_queue_create_archiver(q: *mut IndexedQueue) -> *mut IndexedArchiver;
+    pub fn indexed_queue_create_archiver(
+        q: *mut IndexedQueue,
+        out: *mut *mut IndexedArchiver,
+    ) -> i32;
 
     pub fn indexed_queue_region_size(q: *const IndexedQueue) -> i32;
 
@@ -289,7 +307,8 @@ extern "C" {
         archivable: c_int,
         runtime: *mut Runtime,
         start_index: i64,
-    ) -> *mut IndexedAppender;
+        out: *mut *mut IndexedAppender,
+    ) -> i32;
 
     pub fn indexed_appender_create_with_id(
         directory: *const c_char,
@@ -302,7 +321,8 @@ extern "C" {
         runtime: *mut Runtime,
         appender_id: u8,
         start_index: i64,
-    ) -> *mut IndexedAppender;
+        out: *mut *mut IndexedAppender,
+    ) -> i32;
 
     pub fn indexed_appender_append(
         a: *mut IndexedAppender,
@@ -351,7 +371,8 @@ extern "C" {
         ring_size: c_int,
         timeout_ns: u64,
         runtime: *mut Runtime,
-    ) -> *mut IndexedPoller;
+        out: *mut *mut IndexedPoller,
+    ) -> i32;
 
     pub fn indexed_poller_poll(
         p: *mut IndexedPoller,
@@ -388,7 +409,8 @@ extern "C" {
         ring_size: c_int,
         timeout_ns: u64,
         runtime: *mut Runtime,
-    ) -> *mut IndexedReader;
+        out: *mut *mut IndexedReader,
+    ) -> i32;
 
     pub fn indexed_reader_read(
         r: *mut IndexedReader,
@@ -432,7 +454,8 @@ extern "C" {
         queue_name: *const c_char,
         ring_size: c_int,
         runtime: *mut Runtime,
-    ) -> *mut IndexedArchiver;
+        out: *mut *mut IndexedArchiver,
+    ) -> i32;
 
     pub fn indexed_archiver_archive_up_to_index(
         a: *mut IndexedArchiver,
@@ -475,30 +498,44 @@ extern "C" {
         archivable: c_int,
         write_runtime: *mut Runtime,
         read_runtime: *mut Runtime,
-    ) -> *mut IndexedBatchQueue;
+        out: *mut *mut IndexedBatchQueue,
+    ) -> i32;
+
+    pub fn indexed_batch_queue_create_default(
+        directory: *const c_char,
+        queue_name: *const c_char,
+        write_runtime: *mut Runtime,
+        read_runtime: *mut Runtime,
+        out: *mut *mut IndexedBatchQueue,
+    ) -> i32;
 
     pub fn indexed_batch_queue_close(q: *mut IndexedBatchQueue);
 
     pub fn indexed_batch_queue_create_appender(
         q: *mut IndexedBatchQueue,
-    ) -> *mut IndexedBatchAppender;
+        out: *mut *mut IndexedBatchAppender,
+    ) -> i32;
 
     pub fn indexed_batch_queue_create_appender_with_id(
         q: *mut IndexedBatchQueue,
         appender_id: u8,
-    ) -> *mut IndexedBatchAppender;
+        out: *mut *mut IndexedBatchAppender,
+    ) -> i32;
 
     pub fn indexed_batch_queue_create_poller(
         q: *mut IndexedBatchQueue,
-    ) -> *mut IndexedBatchPoller;
+        out: *mut *mut IndexedBatchPoller,
+    ) -> i32;
 
     pub fn indexed_batch_queue_create_reader(
         q: *mut IndexedBatchQueue,
-    ) -> *mut IndexedBatchReader;
+        out: *mut *mut IndexedBatchReader,
+    ) -> i32;
 
     pub fn indexed_batch_queue_create_archiver(
         q: *mut IndexedBatchQueue,
-    ) -> *mut IndexedBatchArchiver;
+        out: *mut *mut IndexedBatchArchiver,
+    ) -> i32;
 
     pub fn indexed_batch_queue_region_size(q: *const IndexedBatchQueue) -> i32;
 
@@ -520,7 +557,8 @@ extern "C" {
         archivable: c_int,
         runtime: *mut Runtime,
         start_index: i64,
-    ) -> *mut IndexedBatchAppender;
+        out: *mut *mut IndexedBatchAppender,
+    ) -> i32;
 
     pub fn indexed_batch_appender_start_batch(
         a: *mut IndexedBatchAppender,
@@ -588,7 +626,8 @@ extern "C" {
         ring_size: c_int,
         timeout_ns: u64,
         runtime: *mut Runtime,
-    ) -> *mut IndexedBatchPoller;
+        out: *mut *mut IndexedBatchPoller,
+    ) -> i32;
 
     pub fn indexed_batch_poller_poll(
         p: *mut IndexedBatchPoller,
@@ -634,7 +673,8 @@ extern "C" {
         ring_size: c_int,
         timeout_ns: u64,
         runtime: *mut Runtime,
-    ) -> *mut IndexedBatchReader;
+        out: *mut *mut IndexedBatchReader,
+    ) -> i32;
 
     pub fn indexed_batch_reader_read(
         r: *mut IndexedBatchReader,
@@ -684,7 +724,8 @@ extern "C" {
         queue_name: *const c_char,
         ring_size: c_int,
         runtime: *mut Runtime,
-    ) -> *mut IndexedBatchArchiver;
+        out: *mut *mut IndexedBatchArchiver,
+    ) -> i32;
 
     pub fn indexed_batch_archiver_archive_up_to_index(
         a: *mut IndexedBatchArchiver,

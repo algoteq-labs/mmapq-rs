@@ -13,7 +13,7 @@
 
 use std::ffi::CString;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 
 /// A dedicated background thread that polls registered Executables.
@@ -36,19 +36,22 @@ impl Runtime {
         let name = CString::new(config.name)
             .map_err(|_| MmapError::Internal("runtime name contains null byte".into()))?;
 
-        let idle = config.idle_strategy.into_c_ptr();
+        let idle = config.idle_strategy.into_c_ptr()?;
 
-        let ptr = unsafe {
+        let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
+        let rc = unsafe {
             ffi::runtime_create(
                 name.as_ptr(),
                 idle,
                 config.close_timeout_ns,
                 None,
                 std::ptr::null_mut(),
+                &mut ptr,
             )
         };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("runtime_create returned NULL".into()));
+        if rc != 0 {
+            unsafe { ffi::idle_strategy_destroy(idle) };
+            return Err(map_rc(rc));
         }
         Ok(Runtime { inner: ptr })
     }
@@ -62,14 +65,20 @@ impl Runtime {
     /// Dropping the returned handle decrements it; the singleton itself
     /// remains alive.
     pub fn region_mapper() -> Result<Self, MmapError> {
-        let ptr = unsafe { ffi::runtime_region_mapper() };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("runtime_region_mapper returned NULL".into()));
+        let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
+        let rc = unsafe { ffi::runtime_region_mapper(&mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         // SAFETY: Must clone — the C singleton was created with refcount 1.
         // Our handle adds a second reference so that dropping this handle
         // does not free the singleton.
-        let cloned = unsafe { ffi::runtime_clone(ptr) };
+        let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
+        let rc = unsafe { ffi::runtime_clone(ptr, &mut cloned) };
+        if rc != 0 {
+            unsafe { ffi::runtime_destroy(ptr) };
+            return Err(map_rc(rc));
+        }
         Ok(Runtime { inner: cloned })
     }
 
@@ -78,11 +87,17 @@ impl Runtime {
     /// The metrics processor uses a backoff idle strategy and is intended
     /// for lower-priority periodic tasks.
     pub fn metrics_processor() -> Result<Self, MmapError> {
-        let ptr = unsafe { ffi::runtime_metrics_processor() };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("runtime_metrics_processor returned NULL".into()));
+        let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
+        let rc = unsafe { ffi::runtime_metrics_processor(&mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
-        let cloned = unsafe { ffi::runtime_clone(ptr) };
+        let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
+        let rc = unsafe { ffi::runtime_clone(ptr, &mut cloned) };
+        if rc != 0 {
+            unsafe { ffi::runtime_destroy(ptr) };
+            return Err(map_rc(rc));
+        }
         Ok(Runtime { inner: cloned })
     }
 
@@ -114,7 +129,9 @@ impl Runtime {
 
 impl Clone for Runtime {
     fn clone(&self) -> Self {
-        let cloned = unsafe { ffi::runtime_clone(self.inner) };
+        let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
+        let rc = unsafe { ffi::runtime_clone(self.inner, &mut cloned) };
+        assert_eq!(rc, 0, "runtime_clone failed with code {}", rc);
         Runtime { inner: cloned }
     }
 }
@@ -211,19 +228,32 @@ pub enum IdleStrategy {
 }
 
 impl IdleStrategy {
-    fn into_c_ptr(self) -> *mut ffi::IdleStrategy {
-        match self {
-            IdleStrategy::BusySpin => unsafe { ffi::idle_strategy_busy_spin_create() },
-            IdleStrategy::Yield => unsafe { ffi::idle_strategy_yield_create() },
-            IdleStrategy::Sleep { min_ns, max_ns } => {
-                unsafe { ffi::idle_strategy_sleep_create(min_ns, max_ns) }
+    fn into_c_ptr(self) -> Result<*mut ffi::IdleStrategy, MmapError> {
+        let mut out: *mut ffi::IdleStrategy = std::ptr::null_mut();
+        let rc = unsafe {
+            match self {
+                IdleStrategy::BusySpin => {
+                    ffi::idle_strategy_busy_spin_create(&mut out)
+                }
+                IdleStrategy::Yield => {
+                    ffi::idle_strategy_yield_create(&mut out)
+                }
+                IdleStrategy::Sleep { min_ns, max_ns } => {
+                    ffi::idle_strategy_sleep_create(min_ns, max_ns, &mut out)
+                }
+                IdleStrategy::Backoff {
+                    spin_count,
+                    yield_count,
+                    max_sleep_ns,
+                } => {
+                    ffi::idle_strategy_backoff_create(spin_count, yield_count, max_sleep_ns, &mut out)
+                }
             }
-            IdleStrategy::Backoff {
-                spin_count,
-                yield_count,
-                max_sleep_ns,
-            } => unsafe { ffi::idle_strategy_backoff_create(spin_count, yield_count, max_sleep_ns) },
+        };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
+        Ok(out)
     }
 }
 

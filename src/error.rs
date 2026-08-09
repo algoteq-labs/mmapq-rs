@@ -24,12 +24,6 @@ pub enum MmapError {
     /// An argument is invalid (e.g., zero-length data, NULL pointer).
     InvalidArgument,
 
-    /// All 256 appender IDs are in use.
-    PoolExhausted,
-
-    /// The requested appender ID is already acquired by another appender.
-    IdInUse,
-
     /// The queue has been closed and cannot accept new operations.
     QueueClosed,
 
@@ -54,6 +48,10 @@ pub enum MmapError {
 
     /// A mapped appender ID is already in use and on_conflict is Abort.
     IdConflict,
+
+    /// Internal allocation failure (calloc, strdup, etc.).
+    /// The caller should back off and alert — do not retry hot-loop.
+    OutOfMemory,
 }
 
 impl fmt::Display for MmapError {
@@ -63,8 +61,6 @@ impl fmt::Display for MmapError {
             MmapError::InvalidArgument => write!(f, "invalid argument (zero-length data, NULL pointer, etc.)"),
             MmapError::FileNotFound => write!(f, "backing file does not exist"),
             MmapError::BeyondFileSize => write!(f, "position beyond current file size"),
-            MmapError::PoolExhausted => write!(f, "all 256 appender IDs are in use"),
-            MmapError::IdInUse => write!(f, "requested appender ID is already acquired"),
             MmapError::QueueClosed => write!(f, "queue has been closed"),
             MmapError::Corrupt(msg) => write!(f, "corruption: {}", msg),
             MmapError::SchemaMismatch => write!(f, "schema version or queue type mismatch (wrong queue kind, or file from an incompatible version)"),
@@ -73,6 +69,7 @@ impl fmt::Display for MmapError {
             MmapError::RuntimeCloseTimeout => write!(f, "runtime failed to stop within timeout"),
             MmapError::Exists => write!(f, "destination queue already exists"),
             MmapError::IdConflict => write!(f, "mapped appender ID is already in use"),
+            MmapError::OutOfMemory => write!(f, "internal allocation failure — back off, do not retry hot-loop"),
         }
     }
 }
@@ -92,6 +89,7 @@ impl std::error::Error for MmapError {
 /// through this function to get a consistent error type.
 pub(crate) fn map_rc(rc: i32) -> MmapError {
     match rc {
+        -9 => MmapError::OutOfMemory,
         -8 => MmapError::IdConflict,
         -7 => MmapError::FileNotFound,
         -6 => MmapError::Exists,

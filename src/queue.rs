@@ -11,7 +11,7 @@
 use std::ffi::CString;
 use std::marker::PhantomData;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 use crate::runtime::Runtime;
 
@@ -61,7 +61,8 @@ impl IndexedQueue {
             .as_ref()
             .map_or(std::ptr::null_mut(), |r| r.as_ptr());
 
-        let ptr = unsafe {
+        let mut ptr: *mut ffi::IndexedQueue = std::ptr::null_mut();
+        let rc = unsafe {
             ffi::indexed_queue_create(
                 dir.as_ptr(),
                 name.as_ptr(),
@@ -74,10 +75,11 @@ impl IndexedQueue {
                 config.archivable as i32,
                 write_rt,
                 read_rt,
+                &mut ptr,
             )
         };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("indexed_queue_create returned NULL".into()));
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
 
         /* Move the runtime handles out of the config into the queue: the
@@ -95,11 +97,12 @@ impl IndexedQueue {
     }
 
     /// Create a new appender with a fresh ID from the pool.
-    /// Returns `Err(PoolExhausted)` if all 256 IDs are in use.
+    /// Returns `Err(IdConflict)` if all 256 IDs are in use.
     pub fn create_appender(&self) -> Result<super::appender::IndexedAppender, MmapError> {
-        let ptr = unsafe { ffi::indexed_queue_create_appender(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::PoolExhausted);
+        let mut ptr: *mut ffi::IndexedAppender = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_queue_create_appender(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::appender::IndexedAppender {
             inner: ptr,
@@ -109,15 +112,16 @@ impl IndexedQueue {
     }
 
     /// Create an appender with a specific ID.
-    /// Returns `Err(IdInUse)` if the ID is already taken.
+    /// Returns `Err(IdConflict)` if the ID is already in use.
     pub fn create_appender_with_id(
         &self,
         appender_id: u8,
     ) -> Result<super::appender::IndexedAppender, MmapError> {
-        let ptr =
-            unsafe { ffi::indexed_queue_create_appender_with_id(self.inner, appender_id) };
-        if ptr.is_null() {
-            return Err(MmapError::IdInUse);
+        let mut ptr: *mut ffi::IndexedAppender = std::ptr::null_mut();
+        let rc =
+            unsafe { ffi::indexed_queue_create_appender_with_id(self.inner, appender_id, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::appender::IndexedAppender {
             inner: ptr,
@@ -129,9 +133,10 @@ impl IndexedQueue {
     /// Create a sequential cursor-based poller.
     /// Starts at the queue's start index and advances on each successful poll.
     pub fn create_poller(&self) -> Result<super::poller::IndexedPoller, MmapError> {
-        let ptr = unsafe { ffi::indexed_queue_create_poller(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_poller returned NULL".into()));
+        let mut ptr: *mut ffi::IndexedPoller = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_queue_create_poller(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::poller::IndexedPoller {
             inner: ptr,
@@ -143,9 +148,10 @@ impl IndexedQueue {
     /// Create a random-access reader.
     /// Call `read()` with any index to inspect a message without advancing a cursor.
     pub fn create_reader(&self) -> Result<super::reader::IndexedReader, MmapError> {
-        let ptr = unsafe { ffi::indexed_queue_create_reader(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_reader returned NULL".into()));
+        let mut ptr: *mut ffi::IndexedReader = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_queue_create_reader(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::reader::IndexedReader {
             inner: ptr,
@@ -164,9 +170,10 @@ impl IndexedQueue {
     /// Create an archiver for advancing the queue's start index and listing
     /// files that can be safely deleted.
     pub fn create_archiver(&self) -> Result<super::archiver::IndexedArchiver, MmapError> {
-        let ptr = unsafe { ffi::indexed_queue_create_archiver(self.inner) };
-        if ptr.is_null() {
-            return Err(MmapError::Internal("create_archiver returned NULL".into()));
+        let mut ptr: *mut ffi::IndexedArchiver = std::ptr::null_mut();
+        let rc = unsafe { ffi::indexed_queue_create_archiver(self.inner, &mut ptr) };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
         Ok(super::archiver::IndexedArchiver {
             inner: ptr,
