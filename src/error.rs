@@ -54,6 +54,10 @@ pub enum MmapError {
 
     /// A mapped appender ID is already in use and on_conflict is Abort.
     IdConflict,
+
+    /// Internal allocation failure (calloc, strdup, etc.).
+    /// The caller should back off and alert — do not retry hot-loop.
+    OutOfMemory,
 }
 
 impl fmt::Display for MmapError {
@@ -73,6 +77,7 @@ impl fmt::Display for MmapError {
             MmapError::RuntimeCloseTimeout => write!(f, "runtime failed to stop within timeout"),
             MmapError::Exists => write!(f, "destination queue already exists"),
             MmapError::IdConflict => write!(f, "mapped appender ID is already in use"),
+            MmapError::OutOfMemory => write!(f, "internal allocation failure — back off, do not retry hot-loop"),
         }
     }
 }
@@ -92,6 +97,7 @@ impl std::error::Error for MmapError {
 /// through this function to get a consistent error type.
 pub(crate) fn map_rc(rc: i32) -> MmapError {
     match rc {
+        -9 => MmapError::OutOfMemory,
         -8 => MmapError::IdConflict,
         -7 => MmapError::FileNotFound,
         -6 => MmapError::Exists,
