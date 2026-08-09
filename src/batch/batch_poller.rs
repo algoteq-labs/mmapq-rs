@@ -12,6 +12,7 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 
+use crate::batch::BatchMessageIter;
 use crate::error::MmapError;
 use crate::ffi;
 use crate::types::{NextMove, PollResult};
@@ -26,13 +27,14 @@ struct BatchCallback {
     data: *mut std::ffi::c_void,
 }
 
-fn call_batch_handler<H: FnMut(i64, &mut ffi::BatchReadingContext) -> NextMove>(
+fn call_batch_handler<H: FnMut(i64, BatchMessageIter<'_>) -> NextMove>(
     data: *mut std::ffi::c_void,
     batch_index: i64,
     ctx: &mut ffi::BatchReadingContext,
 ) -> i32 {
     let handler: &mut H = unsafe { &mut *(data as *mut H) };
-    handler(batch_index, ctx) as i32
+    let iter = BatchMessageIter::new(ctx);
+    handler(batch_index, iter) as i32
 }
 
 unsafe extern "C" fn c_batch_trampoline(
@@ -56,10 +58,8 @@ unsafe extern "C" fn c_batch_trampoline(
 /// Sequential batch poller. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchPoller {
     pub(crate) inner: *mut ffi::IndexedBatchPoller,
-    /// Keeps the read runtime alive for this participant's lifetime
-    /// (batch queues currently always pass NULL runtimes — sync mapping —
-    /// so this is None today; the field exists so batch runtime support
-    /// cannot reintroduce the UAF fixed in tests/runtime_uaf.rs).
+    /// Keeps the read runtime alive for this participant's lifetime.
+    /// Forwarded from the parent queue at creation; None = sync mapping.
     pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
@@ -67,13 +67,13 @@ pub struct IndexedBatchPoller {
 impl IndexedBatchPoller {
     /// Poll for the next batch, delivering it to the handler.
     ///
-    /// The handler receives (batch_index, &mut BatchReadingContext). The
-    /// BatchReadingContext's batch_iterator starts before message 0 — call
-    /// batch_iterator_advance() before the first current_data() call.
+    /// The handler receives `(batch_index, BatchMessageIter<'_>)`. The
+    /// iterator yields `(&[u8], u8)` pairs — the message payload and the
+    /// appender ID that wrote the batch. Iteration starts at message 0.
     ///
     /// Returns Ok(PollResult) on success, Err(MmapError) on mapping timeout.
     /// Panics are caught and re-raised after the C frame unwinds.
-    pub fn poll<H: FnMut(i64, &mut ffi::BatchReadingContext) -> NextMove>(
+    pub fn poll<H: FnMut(i64, BatchMessageIter<'_>) -> NextMove>(
         &mut self,
         mut handler: H,
     ) -> Result<PollResult, MmapError> {
@@ -152,7 +152,6 @@ impl Drop for IndexedBatchPoller {
 #[cfg(test)]
 mod tests {
     use crate::batch::IndexedBatchQueue;
-    use crate::ffi;
     use crate::queue::QueueConfig;
     use crate::runtime::Runtime;
     use crate::types::NextMove;
@@ -177,7 +176,7 @@ mod tests {
     fn test_batch_poll_end_of_stream() {
         let (_q, mut p, _rt) = setup("test_bpoll_empty");
         let result = p
-            .poll(|_bi, _ctx| NextMove::Advance)
+            .poll(|_bi, _iter| NextMove::Advance)
             .expect("poll should succeed");
         assert_eq!(result, PollResult::EndOfStream);
     }
@@ -193,8 +192,8 @@ mod tests {
 
         let mut count = 0;
         let result = p
-            .poll(|_bi, ctx| {
-                while unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) != 0 } {
+            .poll(|_bi, iter| {
+                for (_data, _aid) in iter {
                     count += 1;
                 }
                 NextMove::Advance

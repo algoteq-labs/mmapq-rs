@@ -349,11 +349,37 @@ impl QueueConfig {
         self
     }
 
+    /// Returns the configured write runtime (clones handle).
+    pub fn get_write_runtime(&self) -> Option<Runtime> {
+        self.write_runtime.clone()
+    }
+
+    /// Take ownership of the write runtime (avoids cloning).
+    pub fn take_write_runtime(&mut self) -> Option<Runtime> {
+        self.write_runtime.take()
+    }
+
     /// Set the read runtime. Clones the runtime handle (refcount increment).
     pub fn read_runtime(mut self, rt: &Runtime) -> Self {
         self.read_runtime = Some(rt.clone());
         self
     }
+
+    /// Returns the configured read runtime (clones handle).
+    pub fn get_read_runtime(&self) -> Option<Runtime> {
+        self.read_runtime.clone()
+    }
+
+    /// Take ownership of the read runtime (avoids cloning).
+    pub fn take_read_runtime(&mut self) -> Option<Runtime> {
+        self.read_runtime.take()
+    }
+
+    /// Whether the queue should be created as archivable.
+    pub fn get_archivable(&self) -> bool {
+        self.archivable
+    }
+
 }
 
 impl Default for QueueConfig {

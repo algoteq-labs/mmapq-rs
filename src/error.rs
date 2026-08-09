@@ -18,9 +18,6 @@ pub enum MmapError {
     /// archived).
     FileNotFound,
 
-    /// The read position exceeds the current file size.
-    BeyondFileSize,
-
     /// An argument is invalid (e.g., zero-length data, NULL pointer).
     InvalidArgument,
 
@@ -60,7 +57,6 @@ impl fmt::Display for MmapError {
             MmapError::MapTimedOut => write!(f, "mapping timed out — runtime may be overloaded"),
             MmapError::InvalidArgument => write!(f, "invalid argument (zero-length data, NULL pointer, etc.)"),
             MmapError::FileNotFound => write!(f, "backing file does not exist"),
-            MmapError::BeyondFileSize => write!(f, "position beyond current file size"),
             MmapError::QueueClosed => write!(f, "queue has been closed"),
             MmapError::Corrupt(msg) => write!(f, "corruption: {}", msg),
             MmapError::SchemaMismatch => write!(f, "schema version or queue type mismatch (wrong queue kind, or file from an incompatible version)"),

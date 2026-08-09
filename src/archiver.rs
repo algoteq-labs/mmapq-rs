@@ -22,7 +22,7 @@
 use std::ffi::CStr;
 use std::marker::PhantomData;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 
 /// Archiver for managing the queue's start index and archivable files.
@@ -51,7 +51,12 @@ impl IndexedArchiver {
     ///
     /// The backing files can be listed via `archivable_files()`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
-        unsafe { ffi::indexed_archiver_archive_up_to_index(self.inner, index) }
+        let rc = unsafe {
+            ffi::indexed_archiver_archive_up_to_index(self.inner, index)
+        };
+        if rc != 0 {
+            return Err(map_rc(rc));
+        }
         Ok(())
     }
 

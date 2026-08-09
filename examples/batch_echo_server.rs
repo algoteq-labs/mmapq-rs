@@ -9,7 +9,7 @@ use std::cell::Cell;
 
 use mmapq::{
     batch::{IndexedBatchAppender, IndexedBatchQueue},
-    ffi, NextMove, QueueConfig, Runtime,
+    NextMove, QueueConfig, Runtime,
 };
 
 const SHUTDOWN_SEQ: u32 = 0;
@@ -118,27 +118,24 @@ fn main() {
 
     while !shutdown.get() {
         let _result = poller
-            .poll(|_b_idx, ctx| {
-                // Advance to first message, check for shutdown
-                if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
-                    return NextMove::Advance;
-                }
-                let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
-                let data =
-                    unsafe { std::slice::from_raw_parts(ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8, len as usize) };
-
-                if data.len() >= 6 {
-                    let seq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
-                    if seq == SHUTDOWN_SEQ {
-                        shutdown.set(true);
+            .poll(|_b_idx, mut iter| {
+                if let Some(data) = iter.next().map(|(d, _aid)| d) {
+                    if data.len() >= 6 {
+                        let seq = u32::from_be_bytes([
+                            data[2], data[3], data[4], data[5],
+                        ]);
+                        if seq == SHUTDOWN_SEQ {
+                            shutdown.set(true);
+                        }
                     }
-                }
 
-                // Echo: append msg 0 manually, then append_remaining_from for msg 1..N
-                let mut writer = appender.start_batch().expect("start batch");
-                writer.append(data).expect("append msg 0");
-                writer.append_remaining_from(&mut ctx.batch_iterator);
-                writer.commit().expect("commit");
+                    // Echo: append first message manually, then pipe rest via
+                    // append_remaining_from_iter for zero-copy path through C.
+                    let mut writer = appender.start_batch().expect("start batch");
+                    writer.append(data).expect("append msg 0");
+                    writer.append_remaining_from_iter(&mut iter);
+                    writer.commit().expect("commit");
+                }
 
                 NextMove::Advance
             })

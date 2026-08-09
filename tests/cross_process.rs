@@ -155,24 +155,16 @@ fn test_rust_client_c_batch_echo_server() {
     for _ in 0..50 {
         loop {
             let result = poller
-                .poll(|_b_idx, ctx| {
-                    if unsafe { mmapq::ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
-                        return NextMove::Advance;
+                .poll(|_b_idx, iter| {
+                    for (data, _aid) in iter {
+                        let s = String::from_utf8_lossy(data);
+                        assert!(
+                            s.starts_with("batch-"),
+                            "unexpected response: {:?}",
+                            s
+                        );
+                        received += 1;
                     }
-                    let len = unsafe { mmapq::ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
-                    let data = unsafe {
-                        std::slice::from_raw_parts(
-                            mmapq::ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
-                            len as usize,
-                        )
-                    };
-                    let s = String::from_utf8_lossy(data);
-                    assert!(
-                        s.starts_with("batch-"),
-                        "unexpected response: {:?}",
-                        s
-                    );
-                    received += 1;
                     NextMove::Advance
                 })
                 .expect("poll");

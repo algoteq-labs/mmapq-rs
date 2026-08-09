@@ -27,7 +27,7 @@
 use std::ffi::CStr;
 use std::marker::PhantomData;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 
 /// Batch queue archiver. Thread-confined (`!Send + !Sync`).
@@ -50,7 +50,12 @@ impl IndexedBatchArchiver {
     ///
     /// **No-op** when `index == current start_index`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
-        unsafe { ffi::indexed_batch_archiver_archive_up_to_index(self.inner, index) }
+        let rc = unsafe {
+            ffi::indexed_batch_archiver_archive_up_to_index(self.inner, index)
+        };
+        if rc != 0 {
+            return Err(map_rc(rc));
+        }
         Ok(())
     }
 
