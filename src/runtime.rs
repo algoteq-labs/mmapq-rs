@@ -36,7 +36,7 @@ impl Runtime {
         let name = CString::new(config.name)
             .map_err(|_| MmapError::Internal("runtime name contains null byte".into()))?;
 
-        let idle = config.idle_strategy.into_c_ptr();
+        let idle = config.idle_strategy.into_c_ptr()?;
 
         let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
         let rc = unsafe {
@@ -50,6 +50,7 @@ impl Runtime {
             )
         };
         if rc != 0 {
+            unsafe { ffi::idle_strategy_destroy(idle) };
             return Err(map_rc(rc));
         }
         Ok(Runtime { inner: ptr })
@@ -127,7 +128,8 @@ impl Runtime {
 impl Clone for Runtime {
     fn clone(&self) -> Self {
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
-        unsafe { ffi::runtime_clone(self.inner, &mut cloned) };
+        let rc = unsafe { ffi::runtime_clone(self.inner, &mut cloned) };
+        assert_eq!(rc, 0, "runtime_clone failed with code {}", rc);
         Runtime { inner: cloned }
     }
 }
@@ -224,29 +226,32 @@ pub enum IdleStrategy {
 }
 
 impl IdleStrategy {
-    fn into_c_ptr(self) -> *mut ffi::IdleStrategy {
+    fn into_c_ptr(self) -> Result<*mut ffi::IdleStrategy, MmapError> {
         let mut out: *mut ffi::IdleStrategy = std::ptr::null_mut();
-        unsafe {
+        let rc = unsafe {
             match self {
                 IdleStrategy::BusySpin => {
-                    ffi::idle_strategy_busy_spin_create(&mut out);
+                    ffi::idle_strategy_busy_spin_create(&mut out)
                 }
                 IdleStrategy::Yield => {
-                    ffi::idle_strategy_yield_create(&mut out);
+                    ffi::idle_strategy_yield_create(&mut out)
                 }
                 IdleStrategy::Sleep { min_ns, max_ns } => {
-                    ffi::idle_strategy_sleep_create(min_ns, max_ns, &mut out);
+                    ffi::idle_strategy_sleep_create(min_ns, max_ns, &mut out)
                 }
                 IdleStrategy::Backoff {
                     spin_count,
                     yield_count,
                     max_sleep_ns,
                 } => {
-                    ffi::idle_strategy_backoff_create(spin_count, yield_count, max_sleep_ns, &mut out);
+                    ffi::idle_strategy_backoff_create(spin_count, yield_count, max_sleep_ns, &mut out)
                 }
             }
+        };
+        if rc != 0 {
+            return Err(map_rc(rc));
         }
-        out
+        Ok(out)
     }
 }
 
