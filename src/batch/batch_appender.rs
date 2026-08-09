@@ -53,7 +53,7 @@ impl IndexedBatchAppender {
     ///   b.append(data)?;
     ///   b.commit()
     ///
-    /// Returns the committed batch index, or an error on mapping timeout.
+    /// Returns the committed batch index, or an error code on failure.
     pub fn append_and_commit(&mut self, data: &[u8]) -> Result<i64, MmapError> {
         let idx = unsafe {
             ffi::indexed_batch_appender_append_and_commit(
@@ -65,7 +65,7 @@ impl IndexedBatchAppender {
         if idx >= 0 {
             Ok(idx)
         } else {
-            Err(MmapError::MapTimedOut)
+            Err(map_rc(idx as i32))
         }
     }
 }
@@ -122,10 +122,7 @@ impl BatchWriter<'_> {
             )
         };
         if idx < 0 {
-            return Err(MmapError::MapTimedOut);
-        }
-        if ptr.is_null() {
-            return Err(MmapError::Internal("append_reserved returned null pointer".into()));
+            return Err(map_rc(idx));
         }
         Ok(unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, size as usize) })
     }
@@ -149,14 +146,14 @@ impl BatchWriter<'_> {
     pub fn commit(mut self) -> Result<i64, MmapError> {
         let batch_offset = unsafe { ffi::mutable_batch_complete(self.batch) };
         if batch_offset < 0 {
-            return Err(MmapError::MapTimedOut);
+            return Err(map_rc(batch_offset as i32));
         }
         let idx = unsafe { ffi::indexed_batch_appender_commit_batch(self.appender, batch_offset) };
         if idx >= 0 {
             self.committed = true;
             Ok(idx)
         } else {
-            Err(MmapError::MapTimedOut)
+            Err(map_rc(idx as i32))
         }
     }
 }

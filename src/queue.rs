@@ -81,9 +81,6 @@ impl IndexedQueue {
         if rc != 0 {
             return Err(map_rc(rc));
         }
-        if ptr.is_null() {
-            return Err(MmapError::Internal("indexed_queue_create returned NULL despite rc=0".into()));
-        }
 
         /* Move the runtime handles out of the config into the queue: the
            raw pointers were extracted above, so `take()` here transfers
