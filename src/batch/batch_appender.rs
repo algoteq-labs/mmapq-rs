@@ -5,6 +5,7 @@
 
 use std::marker::PhantomData;
 
+use crate::batch::BatchMessageIter;
 use crate::error::{map_rc, MmapError};
 use crate::ffi;
 
@@ -137,6 +138,16 @@ impl BatchWriter<'_> {
     /// Returns the number of messages appended.
     pub fn append_remaining_from(&mut self, it: &mut ffi::BatchPayloadIterator) -> i32 {
         unsafe { ffi::mutable_batch_append_remaining_from(self.batch, it) }
+    }
+
+    /// Convenience wrapper: append remaining messages from a `BatchMessageIter`.
+    ///
+    /// Equivalent to `append_remaining_from(iter.as_raw_iterator())`.
+    pub fn append_remaining_from_iter(
+        &mut self,
+        iter: &mut BatchMessageIter<'_>,
+    ) -> i32 {
+        unsafe { ffi::mutable_batch_append_remaining_from(self.batch, iter.as_raw_iterator()) }
     }
 
     /// Commit the batch, making it visible to pollers and readers.

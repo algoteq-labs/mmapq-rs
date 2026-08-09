@@ -12,12 +12,13 @@ use crate::queue::QueueConfig;
 /// Batch queue factory. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchQueue {
     /* field order matters: `inner` first so Drop closes the queue while
-       the runtime fields (future batch runtime support) are still alive. */
+       the runtime fields are still alive. */
     inner: *mut ffi::IndexedBatchQueue,
-    /// Batch queues currently always use sync mapping (NULL runtimes);
-    /// these fields exist so future batch runtime support cannot
-    /// reintroduce the UAF fixed in tests/runtime_uaf.rs.
+    /// Keep the C write runtime alive for the queue's lifetime.
+    /// Forwarded from QueueConfig at creation; None = sync mapping.
     _write_rt: Option<crate::runtime::Runtime>,
+    /// Keep the C read runtime alive for the queue's lifetime.
+    /// Forwarded from QueueConfig at creation; None = sync mapping.
     _read_rt: Option<crate::runtime::Runtime>,
     _not_send: PhantomData<*mut ()>,
 }
@@ -27,13 +28,19 @@ unsafe impl Sync for IndexedBatchQueue {}
 
 impl IndexedBatchQueue {
     /// Create or open a batch queue with the given configuration.
-    pub fn create(config: QueueConfig) -> Result<Self, MmapError> {
+    pub fn create(mut config: QueueConfig) -> Result<Self, MmapError> {
         let dir = CString::new(config.directory())
             .map_err(|_| MmapError::Internal("directory contains null byte".into()))?;
         let name = CString::new(config.queue_name())
             .map_err(|_| MmapError::Internal("queue name contains null byte".into()))?;
 
+        let write_rt = config.take_write_runtime();
+        let read_rt = config.take_read_runtime();
+        let write_rt_ptr = write_rt.as_ref().map_or(std::ptr::null_mut(), |r| r.as_ptr());
+        let read_rt_ptr = read_rt.as_ref().map_or(std::ptr::null_mut(), |r| r.as_ptr());
+
         let mut ptr: *mut ffi::IndexedBatchQueue = std::ptr::null_mut();
+        let archivable = if config.get_archivable() { 1 } else { 0 };
         let rc = unsafe {
             ffi::indexed_batch_queue_create(
                 dir.as_ptr(),
@@ -44,9 +51,9 @@ impl IndexedBatchQueue {
                 config.get_max_file_size(),
                 config.get_start_index(),
                 config.get_timeout(),
-                0,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                archivable,
+                write_rt_ptr,
+                read_rt_ptr,
                 &mut ptr,
             )
         };
@@ -55,8 +62,8 @@ impl IndexedBatchQueue {
         }
         Ok(IndexedBatchQueue {
             inner: ptr,
-            _write_rt: None,
-            _read_rt: None,
+            _write_rt: write_rt,
+            _read_rt: read_rt,
             _not_send: PhantomData,
         })
     }

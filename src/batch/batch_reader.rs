@@ -4,6 +4,7 @@
 
 use std::marker::PhantomData;
 
+use crate::batch::BatchMessageIter;
 use crate::error::MmapError;
 use crate::ffi;
 use crate::types::BatchEntryStatus;
@@ -11,10 +12,8 @@ use crate::types::BatchEntryStatus;
 /// Random-access batch reader. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchReader {
     pub(crate) inner: *mut ffi::IndexedBatchReader,
-    /// Keeps the read runtime alive for this participant's lifetime
-    /// (batch queues currently always pass NULL runtimes — sync mapping —
-    /// so this is None today; the field exists so batch runtime support
-    /// cannot reintroduce the UAF fixed in tests/runtime_uaf.rs).
+    /// Keeps the read runtime alive for this participant's lifetime.
+    /// Forwarded from the parent queue at creation; None = sync mapping.
     pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) ctx: std::cell::UnsafeCell<ffi::BatchReadingContext>,
 }
@@ -45,7 +44,7 @@ impl IndexedBatchReader {
         unsafe { ffi::indexed_batch_reader_read(self.inner, index, ctx) };
         match unsafe { (*ctx).status } {
             ffi::BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
-                ctx: unsafe { &*ctx },
+                ctx,
                 _phantom: PhantomData,
             })),
             ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
@@ -60,7 +59,7 @@ impl IndexedBatchReader {
         unsafe { ffi::indexed_batch_reader_read_first(self.inner, ctx) };
         match unsafe { (*ctx).status } {
             ffi::BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
-                ctx: unsafe { &*ctx },
+                ctx,
                 _phantom: PhantomData,
             })),
             ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
@@ -75,7 +74,7 @@ impl IndexedBatchReader {
         unsafe { ffi::indexed_batch_reader_read_last(self.inner, ctx) };
         match unsafe { (*ctx).status } {
             ffi::BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
-                ctx: unsafe { &*ctx },
+                ctx,
                 _phantom: PhantomData,
             })),
             ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
@@ -114,25 +113,60 @@ impl Drop for IndexedBatchReader {
 }
 
 /// A zero-copy view of a single batch.
+///
+/// Obtained from `IndexedBatchReader::read()` and friends.
+/// The fields are a snapshot of the reader's context at read time —
+/// calling `read()` again on the same reader **before** consuming
+/// this `BatchMessage` will invalidate the cached fields. Use one
+/// `BatchMessage` per `read()` call.
 pub struct BatchMessage<'a> {
-    ctx: &'a ffi::BatchReadingContext,
+    ctx: *const ffi::BatchReadingContext,
     _phantom: PhantomData<&'a IndexedBatchReader>,
 }
 
 impl BatchMessage<'_> {
     /// The payload file offset of the batch's message count field.
     pub fn batch_offset(&self) -> i64 {
-        self.ctx.batch_offset
+        unsafe { (*self.ctx).batch_offset }
     }
 
     /// The number of messages in this batch.
     pub fn message_count(&self) -> i32 {
-        self.ctx.message_count
+        unsafe { (*self.ctx).message_count }
     }
 
     /// The batch index.
     pub fn index(&self) -> i64 {
-        self.ctx.index
+        unsafe { (*self.ctx).index }
+    }
+}
+
+impl BatchMessage<'_> {
+    /// Iterate over messages in this batch.
+    ///
+    /// Returns a `BatchMessageIter` yielding `(&[u8], u8)` pairs —
+    /// the message payload (zero-copy, lifetime-bound to this batch)
+    /// and the appender ID that wrote the batch.
+    ///
+    /// Each call resets the underlying C iterator, making repeated
+    /// iterations safe.
+    ///
+    /// **Staleness:** This `BatchMessage` captured the reader's context
+    /// at read time. Calling `read()` again on the same `IndexedBatchReader`
+    /// before consuming this iterator will overwrite the context with new
+    /// batch metadata — the iterator will then read from the wrong batch.
+    /// Use one `BatchMessage` per `read()` call.
+    pub fn iter(&self) -> BatchMessageIter<'_> {
+        unsafe {
+            let ctx_ptr = self.ctx as *mut ffi::BatchReadingContext;
+            ffi::batch_iterator_init(
+                &mut (*ctx_ptr).batch_iterator,
+                (*ctx_ptr).batch_offset,
+                (*ctx_ptr).message_count,
+                0,
+            );
+            BatchMessageIter::from_raw(ctx_ptr)
+        }
     }
 }
 

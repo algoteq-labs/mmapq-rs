@@ -16,9 +16,15 @@ pub mod batch_appender;
 pub mod batch_poller;
 pub mod batch_reader;
 pub mod batch_archiver;
+/// Zero-copy batch message iterator (`BatchMessageIter`).
+///
+/// Wraps the C `BatchPayloadIterator` to provide safe iteration over
+/// messages in a single batch. Yields `(&[u8], u8)` pairs.
+pub mod batch_iter;
 
 pub use batch_queue::IndexedBatchQueue;
 pub use batch_appender::{IndexedBatchAppender, BatchWriter};
 pub use batch_poller::IndexedBatchPoller;
 pub use batch_reader::{IndexedBatchReader, BatchMessage};
 pub use batch_archiver::IndexedBatchArchiver;
+pub use batch_iter::BatchMessageIter;

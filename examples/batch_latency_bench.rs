@@ -9,7 +9,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use mmapq::batch::{IndexedBatchAppender, IndexedBatchPoller, IndexedBatchQueue};
-use mmapq::{ffi, NextMove, PollResult, QueueConfig, Runtime};
+use mmapq::{NextMove, PollResult, QueueConfig, Runtime};
 
 fn pin_thread(cpu: i32) {
     if cpu < 0 {
@@ -104,22 +104,14 @@ impl BatchLatencyProbe {
         let my_seq = self.current_seq;
 
         while !received.load(Ordering::Relaxed) {
-            let _ = poller.poll(|_b_idx, ctx| {
-                if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
-                    return NextMove::Advance;
-                }
-                let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
-                if len >= 6 {
-                    let data = unsafe {
-                        std::slice::from_raw_parts(
-                            ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
-                            len as usize,
-                        )
-                    };
-                    let rid = u16::from_be_bytes([data[0], data[1]]);
-                    let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
-                    if rid == my_id && rseq == my_seq {
-                        received.store(true, Ordering::Relaxed);
+            let _ = poller.poll(|_b_idx, iter| {
+                for (data, _aid) in iter {
+                    if data.len() >= 6 {
+                        let rid = u16::from_be_bytes([data[0], data[1]]);
+                        let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                        if rid == my_id && rseq == my_seq {
+                            received.store(true, Ordering::Relaxed);
+                        }
                     }
                 }
                 NextMove::Advance
@@ -316,21 +308,13 @@ fn send_shutdown(probe: &mut BatchLatencyProbe) {
     let poller = &mut probe.response_poller;
     let received = &probe.response_received;
     while !received.load(Ordering::Relaxed) && monotonic_nanos() < timeout_at {
-        let _ = poller.poll(|_b_idx, ctx| {
-            if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
-                return NextMove::Advance;
-            }
-            let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
-            if len >= 6 {
-                let data = unsafe {
-                    std::slice::from_raw_parts(
-                        ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
-                        len as usize,
-                    )
-                };
-                let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
-                if rseq == SHUTDOWN_SEQ {
-                    received.store(true, Ordering::Relaxed);
+        let _ = poller.poll(|_b_idx, iter| {
+            for (data, _aid) in iter {
+                if data.len() >= 6 {
+                    let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                    if rseq == SHUTDOWN_SEQ {
+                        received.store(true, Ordering::Relaxed);
+                    }
                 }
             }
             NextMove::Advance
@@ -358,31 +342,22 @@ fn internal_server(dir: &str, write_rt: Option<Runtime>, read_rt: Option<Runtime
     let shutdown = std::cell::Cell::new(false);
     loop {
         let result = poller
-            .poll(|_b_idx, ctx| {
-                // Advance to msg 0, check for shutdown
-                if unsafe { ffi::batch_iterator_advance(&mut ctx.batch_iterator) == 0 } {
-                    return NextMove::Advance;
-                }
-                let len = unsafe { ffi::batch_iterator_current_length_ffi(&ctx.batch_iterator) };
-                let data = unsafe {
-                    std::slice::from_raw_parts(
-                        ffi::batch_iterator_current_data_ffi(&ctx.batch_iterator) as *const u8,
-                        len as usize,
-                    )
-                };
-                if len >= 6 {
-                    let seq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
-                    if seq == SHUTDOWN_SEQ {
-                        shutdown.set(true);
+            .poll(|_b_idx, mut iter| {
+                if let Some(data) = iter.next().map(|(d, _a)| d) {
+                    if data.len() >= 6 {
+                        let seq = u32::from_be_bytes([
+                            data[2], data[3], data[4], data[5],
+                        ]);
+                        if seq == SHUTDOWN_SEQ {
+                            shutdown.set(true);
+                        }
                     }
+
+                    let mut writer = appender.start_batch().expect("server: start batch");
+                    writer.append(data).expect("server: append msg 0");
+                    writer.append_remaining_from_iter(&mut iter);
+                    writer.commit().expect("server: commit");
                 }
-
-                // Approach B: manually append msg 0, then append_remaining_from for msg 1..N
-                let mut writer = appender.start_batch().expect("server: start batch");
-                writer.append(data).expect("server: append msg 0");
-                writer.append_remaining_from(&mut ctx.batch_iterator);
-                writer.commit().expect("server: commit");
-
                 NextMove::Advance
             });
 

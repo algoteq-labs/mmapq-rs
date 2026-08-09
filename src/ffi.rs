@@ -50,7 +50,6 @@ pub type Executable = c_void;
 pub const WRAP_SUCCESS: c_int = 0;
 pub const WRAP_MAP_TIMED_OUT: c_int = 1;
 pub const WRAP_FILE_NOT_FOUND: c_int = 2;
-pub const WRAP_BEYOND_FILE_SIZE: c_int = 3;
 pub const WRAP_UNWRAPPED: c_int = 4;
 
 pub const HEADER_NULL: u64 = 0;
@@ -460,7 +459,7 @@ extern "C" {
     pub fn indexed_archiver_archive_up_to_index(
         a: *mut IndexedArchiver,
         index: i64,
-    );
+    ) -> c_int;
 
     pub fn indexed_archiver_archivable_files(
         a: *mut IndexedArchiver,
@@ -730,7 +729,7 @@ extern "C" {
     pub fn indexed_batch_archiver_archive_up_to_index(
         a: *mut IndexedBatchArchiver,
         index: i64,
-    );
+    ) -> c_int;
 
     pub fn indexed_batch_archiver_archivable_files(
         a: *mut IndexedBatchArchiver,
