@@ -78,3 +78,7 @@ pub use poller::IndexedPoller;
 pub use reader::{IndexedReader, Message};
 pub use archiver::IndexedArchiver;
 pub use transfer::*;
+pub use batch::{
+    IndexedBatchQueue, IndexedBatchAppender, IndexedBatchPoller,
+    IndexedBatchReader, IndexedBatchArchiver, BatchWriter, BatchMessage,
+};

@@ -212,7 +212,9 @@ impl Drop for IndexedQueue {
 
 impl std::fmt::Debug for IndexedQueue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("IndexedQueue").finish()
+        f.debug_struct("IndexedQueue")
+            .field("inner", &self.inner)
+            .finish()
     }
 }
 
@@ -362,6 +364,16 @@ impl QueueConfig {
     /// Set the read runtime. Clones the runtime handle (refcount increment).
     pub fn read_runtime(mut self, rt: &Runtime) -> Self {
         self.read_runtime = Some(rt.clone());
+        self
+    }
+
+    /// Set both write and read runtimes to the same runtime.
+    /// Convenience for the common case where one background mapper thread
+    /// handles both sides. Equivalent to `.write_runtime(&rt).read_runtime(&rt)`.
+    pub fn both_runtimes(mut self, rt: &Runtime) -> Self {
+        let clone = rt.clone();
+        self.write_runtime = Some(rt.clone());
+        self.read_runtime = Some(clone);
         self
     }
 

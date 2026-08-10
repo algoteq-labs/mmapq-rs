@@ -31,6 +31,10 @@ pub enum MmapError {
     /// or file from an incompatible version).
     SchemaMismatch,
 
+    /// I/O error — metadata file write failure (rw_meta_open failed).
+    /// Retry is safe: appender meta writes are idempotent.
+    Eio,
+
     /// An OS-level I/O error occurred (open, mmap, ftruncate, etc.).
     Io(std::io::Error),
 
@@ -60,6 +64,7 @@ impl fmt::Display for MmapError {
             MmapError::QueueClosed => write!(f, "queue has been closed"),
             MmapError::Corrupt(msg) => write!(f, "corruption: {}", msg),
             MmapError::SchemaMismatch => write!(f, "schema version or queue type mismatch (wrong queue kind, or file from an incompatible version)"),
+            MmapError::Eio => write!(f, "I/O error — metadata file write failure (rw_meta_open failed)"),
             MmapError::Io(e) => write!(f, "I/O error: {}", e),
             MmapError::Internal(msg) => write!(f, "internal error: {}", msg),
             MmapError::RuntimeCloseTimeout => write!(f, "runtime failed to stop within timeout"),
@@ -85,6 +90,7 @@ impl std::error::Error for MmapError {
 /// through this function to get a consistent error type.
 pub(crate) fn map_rc(rc: i32) -> MmapError {
     match rc {
+        -10 => MmapError::Eio,
         -9 => MmapError::OutOfMemory,
         -8 => MmapError::IdConflict,
         -7 => MmapError::FileNotFound,
