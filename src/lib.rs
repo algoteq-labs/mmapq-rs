@@ -54,6 +54,7 @@
 //! - `latency_bench` — round-trip latency benchmark (internal + external modes)
 //! - `batch_echo_server` / `batch_latency_bench` — batch queue equivalents
 
+#[doc(hidden)]
 pub mod ffi;
 pub mod error;
 pub mod types;

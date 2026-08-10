@@ -1001,3 +1001,58 @@ extern "C" {
         it: *const BatchPayloadIterator,
     ) -> i32;
 }
+
+#[cfg(test)]
+mod layout_tests {
+    use std::mem::size_of;
+    use super::*;
+
+    fn offset_of<T, F>(obj: &T, field_ptr: *const F) -> usize {
+        let obj_addr = obj as *const T as *const u8 as usize;
+        let field_addr = field_ptr as *const u8 as usize;
+        field_addr - obj_addr
+    }
+
+    #[test]
+    fn verify_batch_payload_iterator_size() {
+        assert_eq!(
+            size_of::<BatchPayloadIterator>(),
+            80,
+            "BatchPayloadIterator must be 80 bytes to match C struct"
+        );
+    }
+
+    #[test]
+    fn verify_batch_reading_context_layout() {
+        let ctx: BatchReadingContext = unsafe { std::mem::zeroed() };
+
+        assert_eq!(
+            offset_of(&ctx, &ctx.index), 0,
+            "BatchReadingContext.index must be at offset 0"
+        );
+        assert_eq!(
+            offset_of(&ctx, &ctx.status), 8,
+            "BatchReadingContext.status must be at offset 8"
+        );
+        assert_eq!(
+            offset_of(&ctx, &ctx.batch_offset), 16,
+            "BatchReadingContext.batch_offset must be at offset 16 (padded for i64)"
+        );
+        assert_eq!(
+            offset_of(&ctx, &ctx.message_count), 24,
+            "BatchReadingContext.message_count must be at offset 24"
+        );
+        assert_eq!(
+            offset_of(&ctx, &ctx.appender_id), 28,
+            "BatchReadingContext.appender_id must be at offset 28"
+        );
+        assert_eq!(
+            offset_of(&ctx, &ctx.batch_iterator), 32,
+            "BatchReadingContext.batch_iterator must be at offset 32"
+        );
+        assert_eq!(
+            size_of::<BatchReadingContext>(), 112,
+            "BatchReadingContext must be 112 bytes"
+        );
+    }
+}
