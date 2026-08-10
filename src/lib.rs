@@ -81,4 +81,5 @@ pub use transfer::*;
 pub use batch::{
     IndexedBatchQueue, IndexedBatchAppender, IndexedBatchPoller,
     IndexedBatchReader, IndexedBatchArchiver, BatchWriter, BatchMessage,
+    BatchMessageIter,
 };

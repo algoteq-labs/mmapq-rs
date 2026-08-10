@@ -109,3 +109,44 @@ impl From<std::io::Error> for MmapError {
         MmapError::Io(e)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_map_rc_eio() {
+        assert!(matches!(map_rc(-10), MmapError::Eio));
+    }
+
+    #[test]
+    fn test_map_rc_all_codes() {
+        let cases = [
+            (-1, MmapError::MapTimedOut),
+            (-2, MmapError::InvalidArgument),
+            (-3, MmapError::QueueClosed),
+            (-4, MmapError::Corrupt("".into())),
+            (-5, MmapError::SchemaMismatch),
+            (-6, MmapError::Exists),
+            (-7, MmapError::FileNotFound),
+            (-8, MmapError::IdConflict),
+            (-9, MmapError::OutOfMemory),
+            (-10, MmapError::Eio),
+        ];
+        for (rc, expected) in &cases {
+            let actual = map_rc(*rc);
+            assert_eq!(std::mem::discriminant(&actual), std::mem::discriminant(expected));
+        }
+    }
+
+    #[test]
+    fn test_map_rc_unknown() {
+        assert!(matches!(map_rc(-99), MmapError::Internal(_)));
+    }
+
+    #[test]
+    fn test_map_rc_non_negative_returns_internal() {
+        assert!(matches!(map_rc(0), MmapError::Internal(_)));
+        assert!(matches!(map_rc(42), MmapError::Internal(_)));
+    }
+}
