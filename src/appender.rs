@@ -156,7 +156,7 @@ mod tests {
         let q = IndexedQueue::create(
             QueueConfig::new(dir.to_str().unwrap(), "q")
                 .region_size(4096)
-                .ring_size(4)
+                .ring_size(16) // ring_size=4 at region_size=4096 fails geometry check (span < 64 KiB)
                 .write_runtime(&rt)
                 .read_runtime(&rt),
         )
@@ -187,7 +187,7 @@ mod tests {
         let q = IndexedQueue::create(
             QueueConfig::new(dir.to_str().unwrap(), "q")
                 .region_size(4096)
-                .ring_size(4)
+                .ring_size(16) // ring_size=4 at region_size=4096 fails geometry check (span < 64 KiB)
                 .write_runtime(&rt)
                 .read_runtime(&rt),
         )
