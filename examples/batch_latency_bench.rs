@@ -355,7 +355,7 @@ fn internal_server(dir: &str, write_rt: Option<Runtime>, read_rt: Option<Runtime
 
                     let mut writer = appender.start_batch().expect("server: start batch");
                     writer.append(data).expect("server: append msg 0");
-                    writer.append_remaining_from_iter(&mut iter);
+                    writer.append_remaining_from_iter(&mut iter).expect("server: zero-copy echo");
                     writer.commit().expect("server: commit");
                 }
                 NextMove::Advance

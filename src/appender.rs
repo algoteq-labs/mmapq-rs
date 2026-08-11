@@ -110,6 +110,7 @@ impl Drop for IndexedAppender {
 
 #[cfg(test)]
 mod tests {
+    use crate::error::MmapError;
     use crate::runtime::Runtime;
     use crate::queue::QueueConfig;
     use crate::IndexedQueue;
@@ -144,5 +145,61 @@ mod tests {
         assert!(offset >= 0, "uncommitted append should return payload offset");
         let idx = a.commit(offset).unwrap();
         assert!(idx >= 0, "commit should return a valid index");
+    }
+
+    #[test]
+    fn test_append_rejects_oversized_message() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-appender").join("test_app_oversized");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("failed to create test base directory");
+        let q = IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .region_size(4096)
+                .ring_size(4)
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        let mut a = q.create_appender().unwrap();
+
+        let ok = a.append(b"small").unwrap();
+        assert_eq!(ok, 0);
+
+        let big = vec![0u8; 4096];
+        let err = a.append(&big).unwrap_err();
+        assert!(matches!(err, MmapError::InvalidArgument));
+
+        let next = a.append(b"after").unwrap();
+        assert_eq!(next, 1);
+
+        drop(a);
+        drop(q);
+        drop(rt);
+    }
+
+    #[test]
+    fn test_append_uncommitted_rejects_oversized_message() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-appender").join("test_app_uncommitted_oversized");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("failed to create test base directory");
+        let q = IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .region_size(4096)
+                .ring_size(4)
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        let mut a = q.create_appender().unwrap();
+
+        let big = vec![0u8; 4096];
+        let err = a.append_uncommitted(&big).unwrap_err();
+        assert!(matches!(err, MmapError::InvalidArgument));
+
+        drop(a);
+        drop(q);
+        drop(rt);
     }
 }

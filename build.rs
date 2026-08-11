@@ -20,13 +20,20 @@ fn main() {
     let paths: Vec<String> = files.iter().map(|f| format!("{}/{}", c_src, f)).collect();
     let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
 
-    cc::Build::new()
+    let mut build = cc::Build::new();
+    build
         .files(&refs)
         .include(c_inc)
         .define("_GNU_SOURCE", None)
-        .warnings_into_errors(false)
-        .compile("mmap_queue");
+        .warnings_into_errors(false);
+
+    if std::env::var("PROFILE").unwrap_or_default() == "release" {
+        build.define("NDEBUG", None);
+    }
+
+    build.compile("mmap_queue");
 
     println!("cargo:rerun-if-changed=c/src");
     println!("cargo:rerun-if-changed=c/include");
+    println!("cargo:rerun-if-env-changed=PROFILE");
 }

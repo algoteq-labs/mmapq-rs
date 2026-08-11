@@ -133,7 +133,7 @@ fn main() {
                     // append_remaining_from_iter for zero-copy path through C.
                     let mut writer = appender.start_batch().expect("start batch");
                     writer.append(data).expect("append msg 0");
-                    writer.append_remaining_from_iter(&mut iter);
+                    writer.append_remaining_from_iter(&mut iter).expect("zero-copy echo");
                     writer.commit().expect("commit");
                 }
 

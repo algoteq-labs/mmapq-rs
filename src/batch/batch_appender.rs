@@ -135,9 +135,12 @@ impl BatchWriter<'_> {
     /// inspect the first message, then call `append_remaining_from()` — it
     /// starts from wherever the iterator currently is.
     ///
-    /// Returns the number of messages appended.
-    pub fn append_remaining_from(&mut self, it: &mut ffi::BatchPayloadIterator) -> i32 {
-        unsafe { ffi::mutable_batch_append_remaining_from(self.batch, it) }
+    /// Returns the number of messages appended, or an error if a message
+    /// exceeds the destination queue's region_size (batch is partially
+    /// populated — must discard, not commit).
+    pub fn append_remaining_from(&mut self, it: &mut ffi::BatchPayloadIterator) -> Result<i32, MmapError> {
+        let n = unsafe { ffi::mutable_batch_append_remaining_from(self.batch, it) };
+        if n >= 0 { Ok(n) } else { Err(map_rc(n)) }
     }
 
     /// Convenience wrapper: append remaining messages from a `BatchMessageIter`.
@@ -146,8 +149,8 @@ impl BatchWriter<'_> {
     pub fn append_remaining_from_iter(
         &mut self,
         iter: &mut BatchMessageIter<'_>,
-    ) -> i32 {
-        unsafe { ffi::mutable_batch_append_remaining_from(self.batch, iter.as_raw_iterator()) }
+    ) -> Result<i32, MmapError> {
+        unsafe { self.append_remaining_from(&mut *iter.as_raw_iterator()) }
     }
 
     /// Commit the batch, making it visible to pollers and readers.
@@ -177,5 +180,43 @@ impl Drop for BatchWriter<'_> {
                 unsafe { ffi::indexed_batch_appender_discard_batch(self.appender, batch_offset) }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::batch::IndexedBatchQueue;
+    use crate::queue::QueueConfig;
+    use crate::runtime::Runtime;
+    use crate::error::MmapError;
+
+    #[test]
+    fn test_batch_append_rejects_oversized_message() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-batch-appender").join("test_batch_append_oversized");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("failed to create test base directory");
+        let q = IndexedBatchQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .region_size(4096)
+                .ring_size(4)
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        let mut a = q.create_appender().unwrap();
+        let mut w = a.start_batch().unwrap();
+
+        let ok = w.append(b"small").unwrap();
+        assert_eq!(ok, 0);
+
+        let big = vec![0u8; 4096];
+        let err = w.append(&big).unwrap_err();
+        assert!(matches!(err, MmapError::InvalidArgument));
+
+        drop(w);
+        drop(a);
+        drop(q);
+        drop(rt);
     }
 }
