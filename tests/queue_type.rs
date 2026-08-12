@@ -33,7 +33,8 @@ fn normal_queue_rejects_batch_participant() {
     )
     .unwrap();
     let ba = bq.create_appender();
-    assert!(ba.is_err(), "batch appender on normal queue must fail");
+    assert!(matches!(ba, Err(mmapq::MmapError::SchemaMismatch)),
+        "batch appender on normal queue must fail with SchemaMismatch");
     drop(bq);
     drop(rt);
 }
@@ -63,7 +64,8 @@ fn batch_queue_rejects_normal_participant() {
     )
     .unwrap();
     let na = nq.create_appender();
-    assert!(na.is_err(), "normal appender on batch queue must fail");
+    assert!(matches!(na, Err(mmapq::MmapError::SchemaMismatch)),
+        "normal appender on batch queue must fail with SchemaMismatch");
     drop(nq);
     drop(rt);
 }
