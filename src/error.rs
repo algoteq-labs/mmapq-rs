@@ -109,6 +109,15 @@ pub(crate) fn map_rc(rc: i32) -> MmapError {
     }
 }
 
+/// Validate that a `usize` length fits in an `i32`.
+///
+/// Returns `InvalidArgument` if `len > i32::MAX as usize`, which would
+/// silently truncate if cast directly. The C library's payload length
+/// field is `int32_t`, so any value exceeding `i32::MAX` is unreachable.
+pub(crate) fn checked_len(len: usize) -> Result<i32, MmapError> {
+    i32::try_from(len).map_err(|_| MmapError::InvalidArgument)
+}
+
 impl From<std::io::Error> for MmapError {
     fn from(e: std::io::Error) -> Self {
         MmapError::Io(e)
@@ -154,5 +163,27 @@ mod tests {
     fn test_map_rc_non_negative_returns_internal() {
         assert!(matches!(map_rc(0), MmapError::Internal(_)));
         assert!(matches!(map_rc(42), MmapError::Internal(_)));
+    }
+
+    #[test]
+    fn test_checked_len_zero() {
+        assert_eq!(checked_len(0).unwrap(), 0);
+    }
+
+    #[test]
+    fn test_checked_len_i32_max() {
+        assert_eq!(checked_len(i32::MAX as usize).unwrap(), i32::MAX);
+    }
+
+    #[test]
+    fn test_checked_len_i32_max_plus_one() {
+        let err = checked_len((i32::MAX as usize) + 1).unwrap_err();
+        assert!(matches!(err, MmapError::InvalidArgument));
+    }
+
+    #[test]
+    fn test_checked_len_large() {
+        let err = checked_len(5_000_000_000_usize).unwrap_err();
+        assert!(matches!(err, MmapError::InvalidArgument));
     }
 }

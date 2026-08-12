@@ -6,7 +6,7 @@
 use std::marker::PhantomData;
 
 use crate::batch::BatchMessageIter;
-use crate::error::{map_rc, MmapError};
+use crate::error::{checked_len, map_rc, MmapError};
 use crate::ffi;
 
 /// Batch appender. Thread-confined (`!Send + !Sync`).
@@ -56,11 +56,12 @@ impl IndexedBatchAppender {
     ///
     /// Returns the committed batch index, or an error code on failure.
     pub fn append_and_commit(&mut self, data: &[u8]) -> Result<i64, MmapError> {
+        let len = checked_len(data.len())?;
         let idx = unsafe {
             ffi::indexed_batch_appender_append_and_commit(
                 self.inner,
                 data.as_ptr() as *const _,
-                data.len() as i32,
+                len,
             )
         };
         if idx >= 0 {
@@ -99,8 +100,9 @@ impl BatchWriter<'_> {
         if data.is_empty() {
             return Err(MmapError::InvalidArgument);
         }
+        let len = checked_len(data.len())?;
         let idx = unsafe {
-            ffi::mutable_batch_append(self.batch, data.as_ptr() as *const _, data.len() as i32)
+            ffi::mutable_batch_append(self.batch, data.as_ptr() as *const _, len)
         };
         if idx >= 0 {
             Ok(idx)

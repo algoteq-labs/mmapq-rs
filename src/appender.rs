@@ -12,7 +12,7 @@
 
 use std::marker::PhantomData;
 
-use crate::error::{map_rc, MmapError};
+use crate::error::{checked_len, map_rc, MmapError};
 use crate::ffi;
 
 /// A queue appender — write and commit messages.
@@ -37,8 +37,9 @@ impl IndexedAppender {
         if data.is_empty() {
             return Err(MmapError::InvalidArgument);
         }
+        let len = checked_len(data.len())?;
         let n = unsafe {
-            ffi::indexed_appender_append(self.inner, data.as_ptr() as *const _, data.len() as i32)
+            ffi::indexed_appender_append(self.inner, data.as_ptr() as *const _, len)
         };
         if n >= 0 {
             Ok(n)
@@ -58,11 +59,12 @@ impl IndexedAppender {
         if data.is_empty() {
             return Err(MmapError::InvalidArgument);
         }
+        let len = checked_len(data.len())?;
         let n = unsafe {
             ffi::indexed_appender_append_uncommitted(
                 self.inner,
                 data.as_ptr() as *const _,
-                data.len() as i32,
+                len,
             )
         };
         if n >= 0 {
