@@ -33,7 +33,7 @@ impl<'a> BatchMessageIter<'a> {
     /// `next()` advances to the first message.
     pub fn new(ctx: &'a mut ffi::BatchReadingContext) -> Self {
         BatchMessageIter {
-            iterator: &mut ctx.batch_iterator,
+            iterator: ctx.iterator,
             appender_id: ctx.appender_id,
             _lifetime: PhantomData,
         }
@@ -44,13 +44,13 @@ impl<'a> BatchMessageIter<'a> {
     /// # Safety
     ///
     /// `ctx` must point to a valid `BatchReadingContext` whose
-    /// `batch_iterator` has been initialised by a read or poll call.
+    /// `iterator` has been initialised by a read or poll call.
     /// The mapped memory backing the returned slices must remain mapped
     /// (i.e. the reader/poller must not be dropped or re-wrapped) for
     /// the lifetime `'a`.
     pub unsafe fn from_raw(ctx: *mut ffi::BatchReadingContext) -> Self {
         BatchMessageIter {
-            iterator: std::ptr::addr_of_mut!((*ctx).batch_iterator),
+            iterator: (*ctx).iterator,
             appender_id: (*ctx).appender_id,
             _lifetime: PhantomData,
         }

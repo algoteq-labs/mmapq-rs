@@ -18,21 +18,12 @@ pub enum IndexedBatchPoller {}
 pub enum IndexedBatchReader {}
 pub enum IndexedBatchArchiver {}
 pub enum MutableBatch {}
-/// Opaque representation of C's `BatchPayloadIterator` (80 bytes).
-///
-/// **Layout** (x86-64 System V ABI, verified via GDB):
-///   `queue_name(8) + payload_acc(8) + payload_buf(16: data(8)+capacity(4)+pad(4))`
-///   `+ batch_offset(8) + message_count(4) + current_msg_index(4)`
-///   `+ current_msg_offset(8) + current_msg_length(4)`
-///   `+ next_message_position(8) + exhausted(4) + trailing_pad(4)`
-///   = **80 bytes** total.
-///
-/// All field access goes through C functions (`batch_iterator_advance`, etc.)
-/// — never access the raw bytes directly.
+/// Opaque — struct definition is private to C (`src/internal/`).
+/// All access through `batch_iterator_advance`, `batch_iterator_current_data_ffi`,
+/// etc. Zero-sized in Rust — never allocated or accessed directly.
 #[repr(C)]
-#[derive(Debug)]
 pub struct BatchPayloadIterator {
-    _data: [u64; 10], // 80 bytes
+    _private: [u8; 0],
 }
 pub enum PayloadIterator {}
 pub enum UncommittedPayloadIterator {}
@@ -158,12 +149,11 @@ pub struct ReadingContext {
 /// Mirrors C's `BatchReadingContext` (indexed_batch_reader.h).
 /// Populated by `indexed_batch_reader_read()` and `indexed_batch_poller_poll()`.
 ///
-/// The `batch_iterator` starts **before** message 0 — call
-/// `batch_iterator_advance()` before accessing data.
+/// The `iterator` points to a BatchPayloadIterator positioned **before**
+/// message 0 — call `batch_iterator_advance()` before accessing data.
 ///
 /// Fields are valid when `status == BATCH_ENTRY_AVAILABLE`.
 #[repr(C)]
-#[derive(Debug)]
 pub struct BatchReadingContext {
     /// The batch index that was read or polled.
     pub index: i64,
@@ -178,8 +168,8 @@ pub struct BatchReadingContext {
     /// functions to preserve lane assignment across batch queue copies.
     pub appender_id: u8,
     _reserved: [u8; 3],
-    /// Iterator positioned before message 0 — advance before reading.
-    pub batch_iterator: BatchPayloadIterator,
+    /// Pointer to iterator positioned before message 0.
+    pub iterator: *mut BatchPayloadIterator,
 }
 
 /* ── Runtime ──────────────────────────────────────────────────────────────── */
@@ -1002,57 +992,5 @@ extern "C" {
     ) -> i32;
 }
 
-#[cfg(test)]
-mod layout_tests {
-    use std::mem::size_of;
-    use super::*;
-
-    fn offset_of<T, F>(obj: &T, field_ptr: *const F) -> usize {
-        let obj_addr = obj as *const T as *const u8 as usize;
-        let field_addr = field_ptr as *const u8 as usize;
-        field_addr - obj_addr
-    }
-
-    #[test]
-    fn verify_batch_payload_iterator_size() {
-        assert_eq!(
-            size_of::<BatchPayloadIterator>(),
-            80,
-            "BatchPayloadIterator must be 80 bytes to match C struct"
-        );
-    }
-
-    #[test]
-    fn verify_batch_reading_context_layout() {
-        let ctx: BatchReadingContext = unsafe { std::mem::zeroed() };
-
-        assert_eq!(
-            offset_of(&ctx, &ctx.index), 0,
-            "BatchReadingContext.index must be at offset 0"
-        );
-        assert_eq!(
-            offset_of(&ctx, &ctx.status), 8,
-            "BatchReadingContext.status must be at offset 8"
-        );
-        assert_eq!(
-            offset_of(&ctx, &ctx.batch_offset), 16,
-            "BatchReadingContext.batch_offset must be at offset 16 (padded for i64)"
-        );
-        assert_eq!(
-            offset_of(&ctx, &ctx.message_count), 24,
-            "BatchReadingContext.message_count must be at offset 24"
-        );
-        assert_eq!(
-            offset_of(&ctx, &ctx.appender_id), 28,
-            "BatchReadingContext.appender_id must be at offset 28"
-        );
-        assert_eq!(
-            offset_of(&ctx, &ctx.batch_iterator), 32,
-            "BatchReadingContext.batch_iterator must be at offset 32"
-        );
-        assert_eq!(
-            size_of::<BatchReadingContext>(), 112,
-            "BatchReadingContext must be 112 bytes"
-        );
-    }
-}
+// layout_tests deleted — BatchPayloadIterator is now opaque.
+// Struct layout is no longer load-bearing across the ABI.

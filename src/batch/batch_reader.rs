@@ -160,7 +160,7 @@ impl BatchMessage<'_> {
         unsafe {
             let ctx_ptr = self.ctx as *mut ffi::BatchReadingContext;
             ffi::batch_iterator_init(
-                &mut (*ctx_ptr).batch_iterator,
+                (*ctx_ptr).iterator,
                 (*ctx_ptr).batch_offset,
                 (*ctx_ptr).message_count,
                 0,
