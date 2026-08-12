@@ -142,20 +142,6 @@ impl IndexedBatchQueue {
         })
     }
 
-    /// The configured region size in bytes.
-    pub fn region_size(&self) -> i32 {
-        unsafe { ffi::indexed_batch_queue_region_size(self.inner) }
-    }
-
-    /// The configured maximum file size in bytes.
-    pub fn max_file_size(&self) -> i64 {
-        unsafe { ffi::indexed_batch_queue_max_file_size(self.inner) }
-    }
-
-    /// The current start index (0 for non-archivable queues).
-    pub fn start_index(&self) -> i64 {
-        unsafe { ffi::indexed_batch_queue_start_index(self.inner) }
-    }
 }
 
 impl Drop for IndexedBatchQueue {

@@ -27,9 +27,6 @@ pub struct BatchPayloadIterator {
 }
 pub enum PayloadIterator {}
 pub enum UncommittedPayloadIterator {}
-pub enum QueueMeta {}
-pub enum AppenderIdPool {}
-pub enum AppenderMeta {}
 pub enum ExecList {}
 pub enum QueueRegionAccessor {}
 
@@ -427,12 +424,6 @@ extern "C" {
         r: *mut IndexedReader,
         index: i64,
     ) -> c_int;
-
-    pub fn indexed_reader_queue_meta(r: *mut IndexedReader) -> *mut QueueMeta;
-
-    pub fn indexed_reader_directory(r: *mut IndexedReader) -> *const c_char;
-
-    pub fn indexed_reader_queue_name(r: *mut IndexedReader) -> *const c_char;
 }
 
 /* ── IndexedArchiver ──────────────────────────────────────────────────────── */
@@ -526,11 +517,6 @@ extern "C" {
         out: *mut *mut IndexedBatchArchiver,
     ) -> i32;
 
-    pub fn indexed_batch_queue_region_size(q: *const IndexedBatchQueue) -> i32;
-
-    pub fn indexed_batch_queue_max_file_size(q: *const IndexedBatchQueue) -> i64;
-
-    pub fn indexed_batch_queue_start_index(q: *const IndexedBatchQueue) -> i64;
 }
 
 /* ── IndexedBatchAppender ─────────────────────────────────────────────────── */
@@ -691,18 +677,6 @@ extern "C" {
         r: *mut IndexedBatchReader,
         index: i64,
     ) -> c_int;
-
-    pub fn indexed_batch_reader_queue_meta(
-        r: *mut IndexedBatchReader,
-    ) -> *mut QueueMeta;
-
-    pub fn indexed_batch_reader_directory(
-        r: *mut IndexedBatchReader,
-    ) -> *const c_char;
-
-    pub fn indexed_batch_reader_queue_name(
-        r: *mut IndexedBatchReader,
-    ) -> *const c_char;
 }
 
 /* ── IndexedBatchArchiver ─────────────────────────────────────────────────── */
@@ -725,12 +699,6 @@ extern "C" {
         a: *mut IndexedBatchArchiver,
         paths_out: *mut *mut c_char,
         max_paths: c_int,
-    ) -> c_int;
-
-    pub fn indexed_batch_archiver_print_summary(
-        a: *mut IndexedBatchArchiver,
-        sb: *mut c_char,
-        n: c_int,
     ) -> c_int;
 
     pub fn indexed_batch_archiver_close(a: *mut IndexedBatchArchiver);
@@ -914,51 +882,6 @@ extern "C" {
     ) -> i64;
 }
 
-/* ── Utility / queue meta accessors ───────────────────────────────────────── */
-
-extern "C" {
-    pub fn queue_meta_open_ro(
-        directory: *const c_char,
-        queue_name: *const c_char,
-        expected_type: u8,
-        out_err: *mut c_int,
-    ) -> *mut QueueMeta;
-
-    pub fn queue_meta_close(m: *mut QueueMeta);
-
-    pub fn queue_meta_region_size(m: *const QueueMeta) -> i32;
-
-    pub fn queue_meta_max_file_size(m: *const QueueMeta) -> i64;
-
-    pub fn queue_meta_start_index(m: *const QueueMeta) -> i64;
-
-    pub fn queue_meta_is_archivable(m: *const QueueMeta) -> c_int;
-
-    pub fn appender_id_pool_open(
-        directory: *const c_char,
-        queue_name: *const c_char,
-    ) -> *mut AppenderIdPool;
-
-    pub fn appender_id_pool_close(pool: *mut AppenderIdPool);
-
-    pub fn appender_meta_start_offset(am: *const AppenderMeta) -> i64;
-
-    pub fn appender_meta_open_rw(
-        directory: *const c_char,
-        queue_name: *const c_char,
-        appender_id: u8,
-    ) -> *mut AppenderMeta;
-
-    pub fn appender_meta_close(am: *mut AppenderMeta);
-
-    pub fn header_found(
-        header_acc: *mut c_void,
-        buf: *mut c_void,
-        index: i64,
-        queue_name: *const c_char,
-    ) -> c_int;
-}
-
 /* ── BatchPayloadIterator ─────────────────────────────────────────────────── */
 
 extern "C" {
@@ -980,8 +903,6 @@ extern "C" {
     ) -> *mut BatchPayloadIterator;
 
     pub fn batch_iterator_advance(it: *mut BatchPayloadIterator) -> c_int;
-
-    pub fn batch_iterator_has_current(it: *const BatchPayloadIterator) -> c_int;
 
     pub fn batch_iterator_current_data_ffi(
         it: *const BatchPayloadIterator,

@@ -20,10 +20,12 @@ fn main() {
     let paths: Vec<String> = files.iter().map(|f| format!("{}/{}", c_src, f)).collect();
     let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
 
+    let c_inc_src = "c/src";
     let mut build = cc::Build::new();
     build
         .files(&refs)
         .include(c_inc)
+        .include(c_inc_src)
         .define("_GNU_SOURCE", None)
         .warnings_into_errors(false);
 
