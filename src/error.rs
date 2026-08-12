@@ -53,6 +53,9 @@ pub enum MmapError {
     /// Internal allocation failure (calloc, strdup, etc.).
     /// The caller should back off and alert — do not retry hot-loop.
     OutOfMemory,
+
+    /// Queue meta file exists but is not yet fully initialised (transient, retry).
+    NotReady,
 }
 
 impl fmt::Display for MmapError {
@@ -71,6 +74,7 @@ impl fmt::Display for MmapError {
             MmapError::Exists => write!(f, "destination queue already exists"),
             MmapError::IdConflict => write!(f, "mapped appender ID is already in use"),
             MmapError::OutOfMemory => write!(f, "internal allocation failure — back off, do not retry hot-loop"),
+            MmapError::NotReady => write!(f, "queue meta file exists but not yet fully initialised — retry"),
         }
     }
 }
@@ -90,6 +94,7 @@ impl std::error::Error for MmapError {
 /// through this function to get a consistent error type.
 pub(crate) fn map_rc(rc: i32) -> MmapError {
     match rc {
+        -11 => MmapError::NotReady,
         -10 => MmapError::Eio,
         -9 => MmapError::OutOfMemory,
         -8 => MmapError::IdConflict,
@@ -132,6 +137,7 @@ mod tests {
             (-8, MmapError::IdConflict),
             (-9, MmapError::OutOfMemory),
             (-10, MmapError::Eio),
+            (-11, MmapError::NotReady),
         ];
         for (rc, expected) in &cases {
             let actual = map_rc(*rc);
