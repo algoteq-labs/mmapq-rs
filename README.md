@@ -69,7 +69,7 @@ use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rt = Runtime::region_mapper()?;
     let q = IndexedQueue::create(
-        QueueConfig::new("/dev/shm", "my_queue")
+        QueueConfig::new("./data", "my_queue")
             .write_runtime(&rt)
             .read_runtime(&rt),
     )?;
