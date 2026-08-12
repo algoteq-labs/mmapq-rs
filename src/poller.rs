@@ -19,7 +19,7 @@ use std::cell::UnsafeCell;
 use std::marker::PhantomData;
 use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 use crate::types::{NextMove, PollResult};
 
@@ -151,7 +151,7 @@ impl IndexedPoller {
 
         match result {
             ffi::POLL_CORRUPT => Err(MmapError::Corrupt("committed payload data is corrupt".into())),
-            ffi::POLL_ERROR => Err(MmapError::MapTimedOut),
+            ffi::POLL_ERROR => Err(map_rc(unsafe { ffi::indexed_poller_last_error(self.inner) })),
             _ => Ok(PollResult::from_ffi(result)),
         }
     }

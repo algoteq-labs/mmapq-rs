@@ -10,7 +10,7 @@
 
 use std::marker::PhantomData;
 
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 use crate::types::EntryStatus;
 
@@ -46,7 +46,7 @@ impl IndexedReader {
                 _phantom: PhantomData,
             })),
             ffi::ENTRY_END_OF_STREAM | ffi::ENTRY_ARCHIVED => Ok(None),
-            ffi::ENTRY_ERROR => Err(MmapError::MapTimedOut),
+            ffi::ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
@@ -63,7 +63,7 @@ impl IndexedReader {
                 _phantom: PhantomData,
             })),
             ffi::ENTRY_END_OF_STREAM | ffi::ENTRY_ARCHIVED => Ok(None),
-            ffi::ENTRY_ERROR => Err(MmapError::MapTimedOut),
+            ffi::ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
@@ -80,7 +80,7 @@ impl IndexedReader {
                 _phantom: PhantomData,
             })),
             ffi::ENTRY_END_OF_STREAM | ffi::ENTRY_ARCHIVED => Ok(None),
-            ffi::ENTRY_ERROR => Err(MmapError::MapTimedOut),
+            ffi::ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
@@ -93,7 +93,7 @@ impl IndexedReader {
             ffi::ENTRY_END_OF_STREAM => EntryStatus::EndOfStream,
             ffi::ENTRY_ARCHIVED => EntryStatus::Archived,
             ffi::ENTRY_ERROR => EntryStatus::Error,
-            _ => EntryStatus::Error,
+            other => { debug_assert!(false, "indexed_reader_entry_status: unknown status {}", other); EntryStatus::Error },
         }
     }
 

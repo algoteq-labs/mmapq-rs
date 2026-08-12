@@ -4,6 +4,8 @@
 //! (e.g., batch poller on a normal queue, or normal poller on a batch queue).
 
 use mmapq::{IndexedQueue, QueueConfig, Runtime, RuntimeConfig};
+use mmapq::batch::IndexedBatchQueue;
+use mmapq::types::NextMove;
 
 fn temp_dir(tag: &str) -> String {
     let dir = std::env::temp_dir().join(format!("mmap-qt-{}-{}", tag, std::process::id()));
@@ -36,6 +38,70 @@ fn normal_queue_rejects_batch_participant() {
     assert!(matches!(ba, Err(mmapq::MmapError::SchemaMismatch)),
         "batch appender on normal queue must fail with SchemaMismatch");
     drop(bq);
+    drop(rt);
+}
+
+#[test]
+fn reader_wrong_type_is_schema_mismatch() {
+    let dir = temp_dir("reader_wrong_type");
+    let rt = Runtime::new(RuntimeConfig::new().name("qrt")).unwrap();
+
+    // Create a batch queue with data
+    let bq = IndexedBatchQueue::create(
+        QueueConfig::new(&dir, "q").write_runtime(&rt).read_runtime(&rt),
+    )
+    .unwrap();
+    let mut ba = bq.create_appender().unwrap();
+    {
+        let mut w = ba.start_batch().unwrap();
+        w.append(b"msg").unwrap();
+        w.commit().unwrap();
+    }
+    drop(ba);
+    drop(bq);
+
+    // Open a single-message IndexedReader on the batch queue
+    let nq = IndexedQueue::create(
+        QueueConfig::new(&dir, "q").write_runtime(&rt).read_runtime(&rt),
+    )
+    .unwrap();
+    let reader = nq.create_reader().unwrap();
+    let result = reader.read(0);
+    assert!(matches!(result, Err(mmapq::MmapError::SchemaMismatch)),
+        "reader on wrong queue type must return SchemaMismatch, got {:?}", result);
+    drop(nq);
+    drop(rt);
+}
+
+#[test]
+fn poller_wrong_type_is_schema_mismatch() {
+    let dir = temp_dir("poller_wrong_type");
+    let rt = Runtime::new(RuntimeConfig::new().name("qrt2")).unwrap();
+
+    // Create a batch queue with data
+    let bq = IndexedBatchQueue::create(
+        QueueConfig::new(&dir, "q").write_runtime(&rt).read_runtime(&rt),
+    )
+    .unwrap();
+    let mut ba = bq.create_appender().unwrap();
+    {
+        let mut w = ba.start_batch().unwrap();
+        w.append(b"msg").unwrap();
+        w.commit().unwrap();
+    }
+    drop(ba);
+    drop(bq);
+
+    // Open a single-message poller on the batch queue
+    let nq = IndexedQueue::create(
+        QueueConfig::new(&dir, "q").write_runtime(&rt).read_runtime(&rt),
+    )
+    .unwrap();
+    let mut poller = nq.create_poller().unwrap();
+    let result = poller.poll(|_i, _aid, _data| NextMove::Advance);
+    assert!(matches!(result, Err(mmapq::MmapError::SchemaMismatch)),
+        "poller on wrong queue type must return SchemaMismatch, got {:?}", result);
+    drop(nq);
     drop(rt);
 }
 

@@ -5,7 +5,7 @@
 use std::marker::PhantomData;
 
 use crate::batch::BatchMessageIter;
-use crate::error::MmapError;
+use crate::error::{map_rc, MmapError};
 use crate::ffi;
 use crate::types::BatchEntryStatus;
 
@@ -48,7 +48,7 @@ impl IndexedBatchReader {
                 _phantom: PhantomData,
             })),
             ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
-            ffi::BATCH_ENTRY_ERROR => Err(MmapError::MapTimedOut),
+            ffi::BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }
@@ -63,7 +63,7 @@ impl IndexedBatchReader {
                 _phantom: PhantomData,
             })),
             ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
-            ffi::BATCH_ENTRY_ERROR => Err(MmapError::MapTimedOut),
+            ffi::BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }
@@ -78,7 +78,7 @@ impl IndexedBatchReader {
                 _phantom: PhantomData,
             })),
             ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
-            ffi::BATCH_ENTRY_ERROR => Err(MmapError::MapTimedOut),
+            ffi::BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }

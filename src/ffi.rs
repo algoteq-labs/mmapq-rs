@@ -384,6 +384,8 @@ extern "C" {
     pub fn indexed_poller_start_index(p: *mut IndexedPoller) -> i64;
 
     pub fn indexed_poller_exists(p: *mut IndexedPoller, index: i64) -> c_int;
+
+    pub fn indexed_poller_last_error(p: *const IndexedPoller) -> c_int;
 }
 
 /* ── IndexedReader ────────────────────────────────────────────────────────── */
@@ -424,6 +426,8 @@ extern "C" {
         r: *mut IndexedReader,
         index: i64,
     ) -> c_int;
+
+    pub fn indexed_reader_last_error(r: *const IndexedReader) -> c_int;
 }
 
 /* ── IndexedArchiver ──────────────────────────────────────────────────────── */
@@ -637,6 +641,8 @@ extern "C" {
         p: *mut IndexedBatchPoller,
         batch_index: i64,
     ) -> c_int;
+
+    pub fn indexed_batch_poller_last_error(p: *const IndexedBatchPoller) -> c_int;
 }
 
 /* ── IndexedBatchReader ───────────────────────────────────────────────────── */
@@ -677,6 +683,8 @@ extern "C" {
         r: *mut IndexedBatchReader,
         index: i64,
     ) -> c_int;
+
+    pub fn indexed_batch_reader_last_error(r: *const IndexedBatchReader) -> c_int;
 }
 
 /* ── IndexedBatchArchiver ─────────────────────────────────────────────────── */
