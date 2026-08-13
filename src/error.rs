@@ -127,7 +127,10 @@ pub(crate) fn map_rc(rc: i32) -> MmapError {
         -7 => MmapError::FileNotFound,
         -6 => MmapError::Exists,
         -5 => MmapError::SchemaMismatch,
-        -4 => MmapError::Corrupt("on-disk corruption detected".into()),
+        // Corrupt keeps a Rust-owned payload, but its default text comes
+        // from C so the two cannot drift. Call sites with a more specific
+        // message construct Corrupt directly.
+        -4 => MmapError::Corrupt(c_strerror(-4).into()),
         -3 => MmapError::QueueClosed,
         -2 => MmapError::InvalidArgument,
         -1 => MmapError::MapTimedOut,
@@ -267,10 +270,28 @@ mod tests {
         // The whole point of (b): no code-backed Display text is hand-written.
         // If these ever fail, a code-backed arm was left on a literal here
         // instead of forwarding to c_strerror.
-        assert_eq!(MmapError::MapTimedOut.to_string(), c_strerror(-1));
-        assert_eq!(MmapError::FileNotFound.to_string(), c_strerror(-7));
-        assert_eq!(MmapError::OutOfMemory.to_string(), c_strerror(-9));
-        assert_eq!(MmapError::NotReady.to_string(), c_strerror(-11));
+        // Exhaustive over the ten code-backed variants: spot-checking a
+        // subset would leave the unchecked arms free to regress to a
+        // hand-written literal, which is the exact failure 17c(b) removes.
+        let pairs: [(MmapError, i32); 10] = [
+            (MmapError::MapTimedOut, -1),
+            (MmapError::InvalidArgument, -2),
+            (MmapError::QueueClosed, -3),
+            (MmapError::SchemaMismatch, -5),
+            (MmapError::Exists, -6),
+            (MmapError::FileNotFound, -7),
+            (MmapError::IdConflict, -8),
+            (MmapError::OutOfMemory, -9),
+            (MmapError::Eio, -10),
+            (MmapError::NotReady, -11),
+        ];
+        for (variant, rc) in pairs {
+            assert_eq!(
+                variant.to_string(),
+                c_strerror(rc),
+                "Display for rc {rc} is not forwarding to C"
+            );
+        }
         // Corrupt keeps its Rust payload.
         assert_eq!(MmapError::Corrupt("boom".into()).to_string(), "corruption: boom");
     }
