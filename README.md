@@ -216,5 +216,5 @@ BSD 2-Clause — see [LICENSE](LICENSE).
 
 ## Platform
 
-Linux only (x86-64, ARM64). Requires naturally aligned lock-free atomics
-over `MAP_SHARED` mmap.
+Linux only (x86-64; ARM64 untested). Requires naturally aligned lock-free
+atomics over `MAP_SHARED` mmap.
