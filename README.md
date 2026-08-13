@@ -28,15 +28,15 @@ The reason to use these bindings rather than calling the C library through
 raw FFI is that they make the C contract's sharp edges unrepresentable in
 safe code:
 
-- **MmapqRuntime lifetime is enforced.** The C queue stores raw runtime pointers
-  without owning them. These bindings make `MmapqIndexedQueue` and every
-  participant hold a reference to the `MmapqRuntime`, so a runtime cannot be
+- **Runtime lifetime is enforced.** The C queue stores raw runtime pointers
+  without owning them. These bindings make `IndexedQueue` and every
+  participant hold a reference to the `Runtime`, so a runtime cannot be
   dropped while a queue or poller still uses it. A use-after-free that is
   reachable from safe C is a compile-time impossibility here.
-- **Thread confinement is typed.** `MmapqIndexedQueue`, `QueueConfig`, and
-  `MmapqRuntime` are `Send + Sync` (create the queue anywhere, share the
-  factory). Participants — `MmapqIndexedAppender`, `MmapqIndexedPoller`,
-  `MmapqIndexedReader`, `MmapqIndexedArchiver` — are `!Send + !Sync`: each owns a
+- **Thread confinement is typed.** `IndexedQueue`, `QueueConfig`, and
+  `Runtime` are `Send + Sync` (create the queue anywhere, share the
+  factory). Participants — `IndexedAppender`, `IndexedPoller`,
+  `IndexedReader`, `IndexedArchiver` — are `!Send + !Sync`: each owns a
   position or cursor and must stay on one thread. The compiler enforces
   this; misuse does not build.
 - **Batch commit is a transaction boundary in the type system.**
@@ -44,7 +44,7 @@ safe code:
   be touched again. Dropping a `BatchWriter` without committing rolls the
   batch back. In an event-sourced processor, an early return or `?` on an
   error path *is* a rollback: the partial batch never becomes visible.
-- **Reads cannot alias.** `MmapqIndexedReader::read(&mut self)` takes a mutable
+- **Reads cannot alias.** `IndexedReader::read(&mut self)` takes a mutable
   borrow, so the returned message borrow blocks a second read at compile
   time — the "flyweight overwritten under a live reference" bug that a
   `&self` API would allow cannot be written.
@@ -64,11 +64,11 @@ generated code is the same FFI calls you would write by hand.
 ## Quick start
 
 ```rust
-use mmapq::{MmapqIndexedQueue, MmapqNextMove, QueueConfig, MmapqRuntime};
+use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let rt = MmapqRuntime::region_mapper()?;
-    let q = MmapqIndexedQueue::create(
+    let rt = Runtime::region_mapper()?;
+    let q = IndexedQueue::create(
         QueueConfig::new("./data", "my_queue")
             .write_runtime(&rt)
             .read_runtime(&rt),
@@ -80,7 +80,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut poller = q.create_poller()?;
     poller.poll(|_index, _appender_id, data| {
         println!("Received: {:?}", std::str::from_utf8(data));
-        MmapqNextMove::Advance
+        NextMove::Advance
     })?;
 
     Ok(())
@@ -119,13 +119,13 @@ cargo test --test cross_process
 
 | Type | `Send` | `Sync` | Notes |
 |---|---|---|---|
-| `MmapqRuntime` | yes | yes | Background mapper thread; mutex-guarded registry |
-| `MmapqIndexedQueue` | yes | yes | Factory; re-entrant participant creation |
+| `Runtime` | yes | yes | Background mapper thread; mutex-guarded registry |
+| `IndexedQueue` | yes | yes | Factory; re-entrant participant creation |
 | `QueueConfig` | yes | yes | Plain builder data |
-| `MmapqIndexedAppender` | no | no | Owns a payload write position |
-| `MmapqIndexedPoller` | no | no | Owns a read cursor |
-| `MmapqIndexedReader` | no | no | Owns lazy region accessors |
-| `MmapqIndexedArchiver` | no | no | Scans metadata |
+| `IndexedAppender` | no | no | Owns a payload write position |
+| `IndexedPoller` | no | no | Owns a read cursor |
+| `IndexedReader` | no | no | Owns lazy region accessors |
+| `IndexedArchiver` | no | no | Scans metadata |
 
 ## Performance
 
