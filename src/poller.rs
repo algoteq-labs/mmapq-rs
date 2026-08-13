@@ -61,6 +61,13 @@ fn call_handler<H: FnMut(i64, u8, &[u8]) -> NextMove>(
 /// live `H` closure on the call stack of `poll()`. Both `Callback` and `H`
 /// live for the same stack frame and are valid because the C call is
 /// synchronous — the trampoline is only called before `poll()` returns.
+///
+/// `data` is a pointer to mapped payload memory returned by
+/// `indexed_poller.c::mmapq_indexed_poller_poll`. The C library guarantees
+/// `length > 0` (zero-length is the end-of-stream sentinel and is never
+/// delivered to the handler — `indexed_poller.c` returns `POLL_END_OF_STREAM`
+/// for it). The `debug_assert` here catches a mismatch if that invariant
+/// regresses.
 unsafe extern "C" fn c_trampoline(
     index: i64,
     appender_id: u8,
@@ -68,6 +75,7 @@ unsafe extern "C" fn c_trampoline(
     length: i32,
     ctx: *mut std::ffi::c_void,
 ) -> i32 {
+    debug_assert!(length > 0, "indexed_poller.c never delivers zero-length to handler");
     let result = catch_unwind(AssertUnwindSafe(|| {
         let cb: &mut Callback = &mut *(ctx as *mut Callback);
         let event = PollEvent {

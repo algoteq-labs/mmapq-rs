@@ -9,6 +9,10 @@ readme = "README.md"
 keywords = ["mmap", "shared-memory", "queue", "lock-free", "high-performance"]
 categories = ["data-structures"]
 links = "mmapq"
+exclude = [
+    "c/test",           # vendored C test suite — not part of the Rust crate
+    "*.log",            # bench logs from latency_bench / batch_latency_bench
+]
 
 [build-dependencies]
 cc = "1.0"

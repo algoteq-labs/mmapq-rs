@@ -7,14 +7,10 @@
 //! ## Architecture
 //!
 //! Messages are stored in two file types:
-//! - **Header file** (one per queue): 64-byte atomically-committed entries
-//!   spaced 512 bytes apart (vertical walk), each containing an appender ID
-//!   and payload offset.
+//! - **Header file** (one per queue): 8-byte atomically-committed entries
+//!   (HEADER_SIZE) spaced 512 bytes apart (vertical walk), each containing
+//!   an appender ID and payload offset.
 //! - **Payload files** (one per appender): [length prefix][payload bytes] framing.
-//!
-//! The queue is split into two logical roles:
-//! - **Request queue**: writer appends, server reads/echoes
-//! - **Response queue**: server appends echo, reader polls
 //!
 //! ## Thread safety
 //!
