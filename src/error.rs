@@ -58,23 +58,49 @@ pub enum MmapError {
     NotReady,
 }
 
+/// Resolve the human-readable string for an `MMAPQ_*` error code.
+///
+/// The C library is the single source of truth for code-backed messages
+/// (`src/mmapq_strerror.c`): this forwards to it so the text can never
+/// diverge from C by construction. Returns a `'static` borrow of a C
+/// static string literal — no allocation, no failure path.
+///
+/// # Safety
+///
+/// `mmapq_strerror` returns a pointer to a static string literal for
+/// every input, including unknown codes (it returns "unknown error"), so
+/// the `CStr` it produces is valid for `'static`. This is discharged
+/// entirely by the C contract; callers need no `unsafe`.
+fn c_strerror(rc: i32) -> &'static str {
+    // SAFETY: mmapq_strerror returns a pointer to a static string literal
+    // for every rc (src/mmapq_strerror.c), including unknown codes.
+    unsafe { std::ffi::CStr::from_ptr(crate::ffi::mmapq_strerror(rc)) }
+        .to_str()
+        .unwrap_or("unknown error")
+}
+
 impl fmt::Display for MmapError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            MmapError::MapTimedOut => write!(f, "mapping timed out — runtime may be overloaded"),
-            MmapError::InvalidArgument => write!(f, "invalid argument (zero-length data, NULL pointer, etc.)"),
-            MmapError::FileNotFound => write!(f, "backing file does not exist"),
-            MmapError::QueueClosed => write!(f, "queue has been closed"),
+            // Code-backed variants forward their text to C — the C
+            // `switch` in mmapq_strerror.c is the source of truth. Codes
+            // match `map_rc` below (values are ABI in mmap_platform.h).
+            MmapError::MapTimedOut => write!(f, "{}", c_strerror(-1)),
+            MmapError::InvalidArgument => write!(f, "{}", c_strerror(-2)),
+            MmapError::QueueClosed => write!(f, "{}", c_strerror(-3)),
+            MmapError::SchemaMismatch => write!(f, "{}", c_strerror(-5)),
+            MmapError::Exists => write!(f, "{}", c_strerror(-6)),
+            MmapError::FileNotFound => write!(f, "{}", c_strerror(-7)),
+            MmapError::IdConflict => write!(f, "{}", c_strerror(-8)),
+            MmapError::OutOfMemory => write!(f, "{}", c_strerror(-9)),
+            MmapError::Eio => write!(f, "{}", c_strerror(-10)),
+            MmapError::NotReady => write!(f, "{}", c_strerror(-11)),
+            // Corrupt maps to ECORRUPT but keeps its Rust-owned payload.
             MmapError::Corrupt(msg) => write!(f, "corruption: {}", msg),
-            MmapError::SchemaMismatch => write!(f, "schema version or queue type mismatch (wrong queue kind, or file from an incompatible version)"),
-            MmapError::Eio => write!(f, "I/O error — metadata file write failure (rw_meta_open failed)"),
+            // Rust-owned variants — no C code; text lives here.
             MmapError::Io(e) => write!(f, "I/O error: {}", e),
             MmapError::Internal(msg) => write!(f, "internal error: {}", msg),
             MmapError::RuntimeCloseTimeout => write!(f, "runtime failed to stop within timeout"),
-            MmapError::Exists => write!(f, "destination queue already exists"),
-            MmapError::IdConflict => write!(f, "mapped appender ID is already in use"),
-            MmapError::OutOfMemory => write!(f, "internal allocation failure — back off, do not retry hot-loop"),
-            MmapError::NotReady => write!(f, "queue meta file exists but not yet fully initialised — retry"),
         }
     }
 }
@@ -185,5 +211,67 @@ mod tests {
     fn test_checked_len_large() {
         let err = checked_len(5_000_000_000_usize).unwrap_err();
         assert!(matches!(err, MmapError::InvalidArgument));
+    }
+
+    /// Every code-backed Display variant forwards to C (mmapq_strerror.c).
+    ///
+    /// Driven off the code list rather than a hand-written expectation
+    /// table so it cannot become a mirror that silently drifts. Each code
+    /// must yield a non-empty, non-unknown string distinct from every
+    /// other code.
+    #[test]
+    fn test_c_strerror_all_codes_distinct() {
+        let codes = [
+            -1, // ETIMEDOUT
+            -2, // EINVAL
+            -3, // ECLOSED
+            -4, // ECORRUPT
+            -5, // ESCHEMA
+            -6, // EEXIST
+            -7, // ENOENT
+            -8, // EIDCONFLICT
+            -9, // ENOMEM
+            -10, // EIO
+            -11, // ENOTREADY
+        ];
+        let mut seen = std::collections::HashSet::new();
+        for rc in codes {
+            let s = c_strerror(rc);
+            assert!(!s.is_empty(), "rc {} must not be empty", rc);
+            assert_ne!(s, "unknown error", "rc {} must map to a known message", rc);
+            assert!(
+                seen.insert(s),
+                "rc {} message '{s}' duplicates another code — messages must be distinct",
+                rc
+            );
+        }
+    }
+
+    #[test]
+    fn test_c_strerror_unknown_code() {
+        // Unknown codes still return a static literal, never NULL/panic.
+        assert_eq!(c_strerror(-999), "unknown error");
+    }
+
+    #[test]
+    fn test_c_strerror_keyword_spots() {
+        // A few keyword spot-checks to guard the forwarding wiring (the
+        // anti-mirror test above proves distinctness, these prove content).
+        assert!(c_strerror(-1).contains("tim"));
+        assert!(c_strerror(-3).contains("closed"));
+        assert!(c_strerror(-9).contains("allocation"));
+    }
+
+    #[test]
+    fn test_display_code_backed_variants_forward_to_c() {
+        // The whole point of (b): no code-backed Display text is hand-written.
+        // If these ever fail, a code-backed arm was left on a literal here
+        // instead of forwarding to c_strerror.
+        assert_eq!(MmapError::MapTimedOut.to_string(), c_strerror(-1));
+        assert_eq!(MmapError::FileNotFound.to_string(), c_strerror(-7));
+        assert_eq!(MmapError::OutOfMemory.to_string(), c_strerror(-9));
+        assert_eq!(MmapError::NotReady.to_string(), c_strerror(-11));
+        // Corrupt keeps its Rust payload.
+        assert_eq!(MmapError::Corrupt("boom".into()).to_string(), "corruption: boom");
     }
 }

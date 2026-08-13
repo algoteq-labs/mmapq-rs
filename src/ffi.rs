@@ -172,6 +172,13 @@ pub struct BatchReadingContext {
 /* ── Runtime ──────────────────────────────────────────────────────────────── */
 
 extern "C" {
+    /// Return a human-readable string for an `MMAPQ_*` error code.
+    ///
+    /// Returns a pointer to a static string literal for every input,
+    /// including unknown codes ("unknown error"). No allocation, no
+    /// failure path. See `src/mmapq_strerror.c` and `mmap_platform.h`.
+    pub fn mmapq_strerror(rc: c_int) -> *const c_char;
+
     pub fn mmapq_runtime_create(
         name: *const c_char,
         idle: *mut IdleStrategy,

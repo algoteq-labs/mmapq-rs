@@ -2,22 +2,21 @@ fn main() {
     let c_src = "c/src";
     let c_inc = "c/include";
 
-    let files: &[&str] = &[
-        "appender_id_pool.c", "appender_meta.c", "batch_payload_iterator.c",
-        "batch_queue_latency_probe.c", "batch_queue_transfer.c",
-        "file_initialiser.c", "file_mapper_rolled.c", "file_mapper_single_ro.c",
-        "file_mapper_single_rw.c", "fixed_size_region.c", "header_reader.c",
-        "indexed_appender.c", "indexed_archiver.c", "indexed_batch_appender.c",
-        "indexed_batch_archiver.c", "indexed_batch_poller.c", "indexed_batch_queue.c",
-        "indexed_batch_reader.c", "indexed_poller.c", "indexed_queue.c",
-        "indexed_reader.c", "payload_iterator.c", "payload_walk.c", "queue_files.c",
-        "queue_latency_probe.c", "queue_meta.c", "queue_region_accessor.c",
-        "queue_transfer.c", "region_async.c", "region_ring.c",
-        "region_ring_accessor.c", "region_sync.c", "runtime.c",
-        "uncommitted_payload_iterator.c",
-    ];
-
-    let paths: Vec<String> = files.iter().map(|f| format!("{}/{}", c_src, f)).collect();
+    // Glob over the mirrored C sources so a new .c file is picked up
+    // automatically instead of silently dropping out of the build (which
+    // surfaces only as an undefined symbol in a downstream crate). Sorted
+    // for deterministic link order. `cargo:rerun-if-changed=c/src` below
+    // re-triggers on any addition.
+    let mut entries: Vec<_> = std::fs::read_dir(c_src)
+        .expect("c/src mirror directory must exist")
+        .filter_map(|e| e.ok())
+        .filter(|e| e.path().extension().map(|x| x == "c").unwrap_or(false))
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+    let paths: Vec<String> = entries
+        .iter()
+        .map(|e| e.path().to_str().expect("non-UTF-8 path").to_string())
+        .collect();
     let refs: Vec<&str> = paths.iter().map(|s| s.as_str()).collect();
 
     let c_inc_src = "c/src";
