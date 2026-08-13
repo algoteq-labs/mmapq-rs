@@ -4,6 +4,11 @@ version = "0.1.0"
 edition = "2021"
 description = "Idiomatic Rust bindings for mmapq — low-latency shared-memory indexed queue"
 license = "BSD-2-Clause"
+repository = "https://github.com/anton-anufriev/mmapq-rs"
+readme = "README.md"
+keywords = ["mmap", "shared-memory", "queue", "lock-free", "high-performance"]
+categories = ["data-structures"]
+links = "mmapq"
 
 [build-dependencies]
 cc = "1.0"
