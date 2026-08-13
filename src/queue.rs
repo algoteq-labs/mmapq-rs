@@ -396,6 +396,6 @@ impl QueueConfig {
 
 impl Default for QueueConfig {
     fn default() -> Self {
-        QueueConfig::new("/dev/shm", "default")
+        QueueConfig::new(std::env::temp_dir().to_str().unwrap(), "default")
     }
 }

@@ -26,12 +26,12 @@
 //!
 //! ## Quick start
 //!
-//! ```rust
+//! ```no_run
 //! use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 //!
 //! let rt = Runtime::region_mapper().unwrap();
 //! let q = IndexedQueue::create(
-//!     QueueConfig::new("/dev/shm", "my_queue")
+//!     QueueConfig::new("./data", "my_queue")
 //!         .write_runtime(&rt)
 //!         .read_runtime(&rt),
 //! ).unwrap();
