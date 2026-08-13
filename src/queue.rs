@@ -33,7 +33,6 @@ pub struct IndexedQueue {
     /// fields are the ownership (UAF regression: tests/runtime_uaf.rs).
     _write_rt: Option<Runtime>,
     _read_rt: Option<Runtime>,
-    _not_send: PhantomData<*mut ()>,
 }
 
 unsafe impl Send for IndexedQueue {}
@@ -92,8 +91,7 @@ impl IndexedQueue {
             inner: ptr,
             _write_rt: write_owned,
             _read_rt: read_owned,
-            _not_send: PhantomData,
-        })
+                    })
     }
 
     /// Create a new appender with a fresh ID from the pool.

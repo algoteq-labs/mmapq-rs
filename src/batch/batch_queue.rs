@@ -20,7 +20,6 @@ pub struct IndexedBatchQueue {
     /// Keep the C read runtime alive for the queue's lifetime.
     /// Forwarded from QueueConfig at creation; None = sync mapping.
     _read_rt: Option<crate::runtime::Runtime>,
-    _not_send: PhantomData<*mut ()>,
 }
 
 unsafe impl Send for IndexedBatchQueue {}
@@ -64,8 +63,7 @@ impl IndexedBatchQueue {
             inner: ptr,
             _write_rt: write_rt,
             _read_rt: read_rt,
-            _not_send: PhantomData,
-        })
+                    })
     }
 
     /// Create a batch appender with a fresh ID from the pool.

@@ -114,8 +114,9 @@ impl IndexedPoller {
     ///
     /// # Allocation
     ///
-    /// Zero heap allocations. The closure is passed by value on the stack.
-    /// The `Callback` struct and trampoline are stack-allocated.
+    /// Zero heap allocations on the success path. The closure is passed by
+    /// value on the stack; the `Callback` struct and trampoline are
+    /// stack-allocated. Error paths allocate a `String` (MmapError).
     pub fn poll<H: FnMut(i64, u8, &[u8]) -> NextMove>(
         &mut self,
         mut handler: H,
