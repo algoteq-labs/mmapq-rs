@@ -534,7 +534,7 @@ fn test_import_auto_on_conflict() {
     QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
-    // Import with CONFLICT_AUTO — should auto-assign since ID 0 is taken
+    // Import with MMAPQ_CONFLICT_AUTO — should auto-assign since ID 0 is taken
     let n = QueueTransfer::import(
         ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
         StartIndexMode::Rebase, true, None, ConflictBehavior::Auto,
@@ -573,7 +573,7 @@ fn test_import_abort_on_conflict() {
     QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
-    // Import with CONFLICT_ABORT — should get IdConflict error
+    // Import with MMAPQ_CONFLICT_ABORT — should get IdConflict error
     let e = QueueTransfer::import(
         ep.to_str().unwrap(), dest.to_str().unwrap(), "q",
         StartIndexMode::Rebase, true, None, ConflictBehavior::Abort,
@@ -680,7 +680,7 @@ fn test_export_with_filter() {
     assert!(!file.is_null());
 
     let n = unsafe {
-        ffi::queue_transfer_export(
+        ffi::mmapq_queue_transfer_export(
             r.as_ptr(), file, 0, li, 0,
             Some(keep_filter as unsafe extern "C" fn(_, _, _, _) -> _),
             None,

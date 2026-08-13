@@ -29,7 +29,7 @@ impl IndexedBatchReader {
     /// Each appender in a queue has a unique lane ID (0–255). Payload files
     /// are per-appender (`payload_<id>`). This value is populated by the most
     /// recent `read()` / `read_first()` / `read_last()` call and is valid
-    /// only when the returned status was `BATCH_ENTRY_AVAILABLE`.
+    /// only when the returned status was `MMAPQ_BATCH_ENTRY_AVAILABLE`.
     ///
     /// # Panics
     ///
@@ -41,14 +41,14 @@ impl IndexedBatchReader {
     /// Read the batch at the given index.
     pub fn read(&self, index: i64) -> Result<Option<BatchMessage<'_>>, MmapError> {
         let ctx = self.ctx.get();
-        unsafe { ffi::indexed_batch_reader_read(self.inner, index, ctx) };
+        unsafe { ffi::mmapq_indexed_batch_reader_read(self.inner, index, ctx) };
         match unsafe { (*ctx).status } {
-            ffi::BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
+            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
-            ffi::BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_batch_reader_last_error(self.inner) })),
+            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM | ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }
@@ -56,14 +56,14 @@ impl IndexedBatchReader {
     /// Read the first unarchived batch.
     pub fn read_first(&self) -> Result<Option<BatchMessage<'_>>, MmapError> {
         let ctx = self.ctx.get();
-        unsafe { ffi::indexed_batch_reader_read_first(self.inner, ctx) };
+        unsafe { ffi::mmapq_indexed_batch_reader_read_first(self.inner, ctx) };
         match unsafe { (*ctx).status } {
-            ffi::BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
+            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
-            ffi::BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_batch_reader_last_error(self.inner) })),
+            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM | ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }
@@ -71,44 +71,44 @@ impl IndexedBatchReader {
     /// Read the last committed batch.
     pub fn read_last(&self) -> Result<Option<BatchMessage<'_>>, MmapError> {
         let ctx = self.ctx.get();
-        unsafe { ffi::indexed_batch_reader_read_last(self.inner, ctx) };
+        unsafe { ffi::mmapq_indexed_batch_reader_read_last(self.inner, ctx) };
         match unsafe { (*ctx).status } {
-            ffi::BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
+            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::BATCH_ENTRY_END_OF_STREAM | ffi::BATCH_ENTRY_ARCHIVED => Ok(None),
-            ffi::BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_batch_reader_last_error(self.inner) })),
+            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM | ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }
 
     /// Check availability of the batch at `index` without reading it.
     pub fn entry_status(&self, index: i64) -> BatchEntryStatus {
-        let s = unsafe { ffi::indexed_batch_reader_entry_status(self.inner, index) };
+        let s = unsafe { ffi::mmapq_indexed_batch_reader_entry_status(self.inner, index) };
         match s {
-            ffi::BATCH_ENTRY_AVAILABLE => BatchEntryStatus::Available,
-            ffi::BATCH_ENTRY_END_OF_STREAM => BatchEntryStatus::EndOfStream,
-            ffi::BATCH_ENTRY_ARCHIVED => BatchEntryStatus::Archived,
-            ffi::BATCH_ENTRY_ERROR => BatchEntryStatus::Error,
+            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => BatchEntryStatus::Available,
+            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM => BatchEntryStatus::EndOfStream,
+            ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => BatchEntryStatus::Archived,
+            ffi::MMAPQ_BATCH_ENTRY_ERROR => BatchEntryStatus::Error,
             _ => BatchEntryStatus::Error,
         }
     }
 
     /// The highest committed batch index.
     pub fn last_index(&self) -> i64 {
-        unsafe { ffi::indexed_batch_reader_last_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_reader_last_index(self.inner) }
     }
 
     /// The lowest readable batch index.
     pub fn start_index(&self) -> i64 {
-        unsafe { ffi::indexed_batch_reader_start_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_reader_start_index(self.inner) }
     }
 }
 
 impl Drop for IndexedBatchReader {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_batch_reader_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_reader_close(self.inner) }
     }
 }
 
@@ -159,7 +159,7 @@ impl BatchMessage<'_> {
     pub fn iter(&self) -> BatchMessageIter<'_> {
         unsafe {
             let ctx_ptr = self.ctx as *mut ffi::BatchReadingContext;
-            ffi::batch_iterator_init(
+            ffi::mmapq_batch_iterator_init(
                 (*ctx_ptr).iterator,
                 (*ctx_ptr).batch_offset,
                 (*ctx_ptr).message_count,

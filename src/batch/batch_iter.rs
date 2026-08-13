@@ -61,12 +61,12 @@ impl<'a> Iterator for BatchMessageIter<'a> {
     type Item = (&'a [u8], u8);
 
     fn next(&mut self) -> Option<Self::Item> {
-        let advanced = unsafe { ffi::batch_iterator_advance(self.iterator) };
+        let advanced = unsafe { ffi::mmapq_batch_iterator_advance(self.iterator) };
         if advanced == 0 {
             return None;
         }
-        let data = unsafe { ffi::batch_iterator_current_data_ffi(self.iterator) };
-        let length = unsafe { ffi::batch_iterator_current_length_ffi(self.iterator) };
+        let data = unsafe { ffi::mmapq_batch_iterator_current_data_ffi(self.iterator) };
+        let length = unsafe { ffi::mmapq_batch_iterator_current_length_ffi(self.iterator) };
         if length <= 0 {
             return None;
         }

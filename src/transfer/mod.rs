@@ -84,7 +84,7 @@ impl QueueTransfer {
         let mode = to_c_mode(start_index_mode);
 
         let result = unsafe {
-            ffi::queue_transfer_export(
+            ffi::mmapq_queue_transfer_export(
                 reader.as_ptr(),
                 file,
                 from_index,
@@ -138,7 +138,7 @@ impl QueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::queue_transfer_import(
+            ffi::mmapq_queue_transfer_import(
                 file, dir.as_ptr(), name.as_ptr(),
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
@@ -183,7 +183,7 @@ impl QueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::queue_transfer_import_batch_stream(
+            ffi::mmapq_queue_transfer_import_batch_stream(
                 file, dir.as_ptr(), name.as_ptr(),
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
@@ -222,7 +222,7 @@ impl QueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::queue_transfer_copy(
+            ffi::mmapq_queue_transfer_copy(
                 reader.as_ptr(), dir.as_ptr(), name.as_ptr(),
                 from_index, to_index, mode,
                 None, None, std::ptr::null_mut(),
@@ -261,7 +261,7 @@ impl QueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::queue_transfer_copy_batch_to_normal(
+            ffi::mmapq_queue_transfer_copy_batch_to_normal(
                 reader.as_ptr(), dir.as_ptr(), name.as_ptr(),
                 from_index, to_index, mode,
                 None, None, std::ptr::null_mut(),
@@ -302,7 +302,7 @@ impl BatchQueueTransfer {
         let mode = to_c_mode(start_index_mode);
 
         let result = unsafe {
-            ffi::batch_queue_transfer_export(
+            ffi::mmapq_batch_queue_transfer_export(
                 reader.as_ptr(),
                 file,
                 from_index,
@@ -348,7 +348,7 @@ impl BatchQueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::batch_queue_transfer_import(
+            ffi::mmapq_batch_queue_transfer_import(
                 file, dir.as_ptr(), name.as_ptr(),
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
@@ -393,7 +393,7 @@ impl BatchQueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::batch_queue_transfer_import_flat_stream(
+            ffi::mmapq_batch_queue_transfer_import_flat_stream(
                 file, dir.as_ptr(), name.as_ptr(),
                 mode,
                 std::ptr::null_mut(), std::ptr::null_mut(),
@@ -432,7 +432,7 @@ impl BatchQueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::batch_queue_transfer_copy(
+            ffi::mmapq_batch_queue_transfer_copy(
                 reader.as_ptr(), dir.as_ptr(), name.as_ptr(),
                 from_index, to_index, mode,
                 None, None, std::ptr::null_mut(),
@@ -471,7 +471,7 @@ impl BatchQueueTransfer {
         let (cb, ctx, _owned) = setup_mapper(mapper);
 
         let result = unsafe {
-            ffi::batch_queue_transfer_copy_normal_to_batch(
+            ffi::mmapq_batch_queue_transfer_copy_normal_to_batch(
                 reader.as_ptr(), dir.as_ptr(), name.as_ptr(),
                 from_index, to_index, mode,
                 None, None, std::ptr::null_mut(),

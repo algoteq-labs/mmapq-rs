@@ -39,7 +39,7 @@ impl IndexedAppender {
         }
         let len = checked_len(data.len())?;
         let n = unsafe {
-            ffi::indexed_appender_append(self.inner, data.as_ptr() as *const _, len)
+            ffi::mmapq_indexed_appender_append(self.inner, data.as_ptr() as *const _, len)
         };
         if n >= 0 {
             Ok(n)
@@ -61,7 +61,7 @@ impl IndexedAppender {
         }
         let len = checked_len(data.len())?;
         let n = unsafe {
-            ffi::indexed_appender_append_uncommitted(
+            ffi::mmapq_indexed_appender_append_uncommitted(
                 self.inner,
                 data.as_ptr() as *const _,
                 len,
@@ -80,7 +80,7 @@ impl IndexedAppender {
     /// Returns the queue index assigned to this message,
     /// or an `MMAPQ_*` error code on failure.
     pub fn commit(&mut self, payload_offset: i64) -> Result<i64, MmapError> {
-        let n = unsafe { ffi::indexed_appender_commit(self.inner, payload_offset) };
+        let n = unsafe { ffi::mmapq_indexed_appender_commit(self.inner, payload_offset) };
         if n >= 0 {
             Ok(n)
         } else {
@@ -90,23 +90,23 @@ impl IndexedAppender {
 
     /// The appender's per-lane ID (0–255).
     pub fn id(&self) -> u8 {
-        unsafe { ffi::indexed_appender_id(self.inner) }
+        unsafe { ffi::mmapq_indexed_appender_id(self.inner) }
     }
 
     /// The current (last committed) index.
     pub fn current_index(&self) -> i64 {
-        unsafe { ffi::indexed_appender_current_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_appender_current_index(self.inner) }
     }
 
     /// The start offset of the appender's payload file.
     pub fn start_offset(&self) -> i64 {
-        unsafe { ffi::indexed_appender_start_offset(self.inner) }
+        unsafe { ffi::mmapq_indexed_appender_start_offset(self.inner) }
     }
 }
 
 impl Drop for IndexedAppender {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_appender_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_appender_close(self.inner) }
     }
 }
 

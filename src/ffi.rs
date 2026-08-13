@@ -19,7 +19,7 @@ pub enum IndexedBatchReader {}
 pub enum IndexedBatchArchiver {}
 pub enum MutableBatch {}
 /// Opaque — struct definition is private to C (`src/internal/`).
-/// All access through `batch_iterator_advance`, `batch_iterator_current_data_ffi`,
+/// All access through `mmapq_batch_iterator_advance`, `mmapq_batch_iterator_current_data_ffi`,
 /// etc. Zero-sized in Rust — never allocated or accessed directly.
 #[repr(C)]
 pub struct BatchPayloadIterator {
@@ -43,27 +43,27 @@ pub const WRAP_UNWRAPPED: c_int = 4;
 pub const HEADER_NULL: u64 = 0;
 pub const HEADER_NULL_INDEX: i64 = -1;
 
-pub const POLL_END_OF_STREAM: c_int = 0;
-pub const POLL_ADVANCED: c_int = 1;
-pub const POLL_STOPPED: c_int = 2;
-pub const POLL_RETREATED: c_int = 3;
-pub const POLL_ARCHIVED: c_int = 4;
-pub const POLL_ERROR: c_int = 5;
-pub const POLL_CORRUPT: c_int = 6;
+pub const MMAPQ_POLL_END_OF_STREAM: c_int = 0;
+pub const MMAPQ_POLL_ADVANCED: c_int = 1;
+pub const MMAPQ_POLL_STOPPED: c_int = 2;
+pub const MMAPQ_POLL_RETREATED: c_int = 3;
+pub const MMAPQ_POLL_ARCHIVED: c_int = 4;
+pub const MMAPQ_POLL_ERROR: c_int = 5;
+pub const MMAPQ_POLL_CORRUPT: c_int = 6;
 
-pub const NEXT_ADVANCE: c_int = 0;
-pub const NEXT_STOP: c_int = 1;
-pub const NEXT_RETREAT: c_int = 2;
+pub const MMAPQ_NEXT_ADVANCE: c_int = 0;
+pub const MMAPQ_NEXT_STOP: c_int = 1;
+pub const MMAPQ_NEXT_RETREAT: c_int = 2;
 
-pub const ENTRY_AVAILABLE: c_int = 0;
-pub const ENTRY_END_OF_STREAM: c_int = 1;
-pub const ENTRY_ARCHIVED: c_int = 2;
-pub const ENTRY_ERROR: c_int = 3;
+pub const MMAPQ_ENTRY_AVAILABLE: c_int = 0;
+pub const MMAPQ_ENTRY_END_OF_STREAM: c_int = 1;
+pub const MMAPQ_ENTRY_ARCHIVED: c_int = 2;
+pub const MMAPQ_ENTRY_ERROR: c_int = 3;
 
-pub const BATCH_ENTRY_AVAILABLE: c_int = 0;
-pub const BATCH_ENTRY_END_OF_STREAM: c_int = 1;
-pub const BATCH_ENTRY_ARCHIVED: c_int = 2;
-pub const BATCH_ENTRY_ERROR: c_int = 3;
+pub const MMAPQ_BATCH_ENTRY_AVAILABLE: c_int = 0;
+pub const MMAPQ_BATCH_ENTRY_END_OF_STREAM: c_int = 1;
+pub const MMAPQ_BATCH_ENTRY_ARCHIVED: c_int = 2;
+pub const MMAPQ_BATCH_ENTRY_ERROR: c_int = 3;
 
 pub const QUEUE_TRANSFER_REBASE: c_int = 0;
 pub const QUEUE_TRANSFER_PRESERVE: c_int = 1;
@@ -93,13 +93,13 @@ pub type MessageHandler = Option<
     ) -> c_int,
 >;
 
-/// Callback invoked by `indexed_batch_poller_poll()` for each batch.
+/// Callback invoked by `mmapq_indexed_batch_poller_poll()` for each batch.
 ///
 /// Receives the batch index, a pointer to the BatchReadingContext (embedded
 /// BatchPayloadIterator starts before message 0), and the user-supplied ctx.
 ///
-/// Must return a NextMove cast to c_int (NEXT_ADVANCE=0, NEXT_STOP=1,
-/// NEXT_RETREAT=2).
+/// Must return a NextMove cast to c_int (MMAPQ_NEXT_ADVANCE=0, MMAPQ_NEXT_STOP=1,
+/// MMAPQ_NEXT_RETREAT=2).
 pub type BatchHandler = Option<
     unsafe extern "C" fn(
         batch_index: i64,
@@ -144,17 +144,17 @@ pub struct ReadingContext {
 /// Result of a batch read or batch poll operation.
 ///
 /// Mirrors C's `BatchReadingContext` (indexed_batch_reader.h).
-/// Populated by `indexed_batch_reader_read()` and `indexed_batch_poller_poll()`.
+/// Populated by `mmapq_indexed_batch_reader_read()` and `mmapq_indexed_batch_poller_poll()`.
 ///
 /// The `iterator` points to a BatchPayloadIterator positioned **before**
-/// message 0 — call `batch_iterator_advance()` before accessing data.
+/// message 0 — call `mmapq_batch_iterator_advance()` before accessing data.
 ///
-/// Fields are valid when `status == BATCH_ENTRY_AVAILABLE`.
+/// Fields are valid when `status == MMAPQ_BATCH_ENTRY_AVAILABLE`.
 #[repr(C)]
 pub struct BatchReadingContext {
     /// The batch index that was read or polled.
     pub index: i64,
-    /// Availability status (BATCH_ENTRY_AVAILABLE, _END_OF_STREAM, etc.).
+    /// Availability status (MMAPQ_BATCH_ENTRY_AVAILABLE, _END_OF_STREAM, etc.).
     pub status: c_int,
     /// Payload file offset where the batch header begins.
     pub batch_offset: i64,
@@ -172,7 +172,7 @@ pub struct BatchReadingContext {
 /* ── Runtime ──────────────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn runtime_create(
+    pub fn mmapq_runtime_create(
         name: *const c_char,
         idle: *mut IdleStrategy,
         close_timeout_ns: u64,
@@ -181,48 +181,48 @@ extern "C" {
         out: *mut *mut Runtime,
     ) -> c_int;
 
-    pub fn runtime_destroy(rt: *mut Runtime);
+    pub fn mmapq_runtime_destroy(rt: *mut Runtime);
 
-    pub fn runtime_clone(rt: *mut Runtime, out: *mut *mut Runtime) -> c_int;
+    pub fn mmapq_runtime_clone(rt: *mut Runtime, out: *mut *mut Runtime) -> c_int;
 
-    pub fn runtime_close(rt: *mut Runtime);
+    pub fn mmapq_runtime_close(rt: *mut Runtime);
 
-    pub fn runtime_register(rt: *mut Runtime, exec: *mut Executable) -> c_int;
+    pub fn mmapq_runtime_register(rt: *mut Runtime, exec: *mut Executable) -> c_int;
 
-    pub fn runtime_unregister_and_wait(rt: *mut Runtime, exec: *mut Executable);
+    pub fn mmapq_runtime_unregister_and_wait(rt: *mut Runtime, exec: *mut Executable);
 
-    pub fn runtime_set_affinity(rt: *mut Runtime, cpu_core: c_int) -> c_int;
+    pub fn mmapq_runtime_set_affinity(rt: *mut Runtime, cpu_core: c_int) -> c_int;
 
-    pub fn runtime_is_closed(rt: *const Runtime) -> c_int;
+    pub fn mmapq_runtime_is_closed(rt: *const Runtime) -> c_int;
 
-    pub fn runtime_region_mapper(out: *mut *mut Runtime) -> c_int;
+    pub fn mmapq_runtime_region_mapper(out: *mut *mut Runtime) -> c_int;
 
-    pub fn runtime_metrics_processor(out: *mut *mut Runtime) -> c_int;
+    pub fn mmapq_runtime_metrics_processor(out: *mut *mut Runtime) -> c_int;
 
-    pub fn idle_strategy_busy_spin_create(out: *mut *mut IdleStrategy) -> c_int;
+    pub fn mmapq_idle_strategy_busy_spin_create(out: *mut *mut IdleStrategy) -> c_int;
 
-    pub fn idle_strategy_yield_create(out: *mut *mut IdleStrategy) -> c_int;
+    pub fn mmapq_idle_strategy_yield_create(out: *mut *mut IdleStrategy) -> c_int;
 
-    pub fn idle_strategy_sleep_create(
+    pub fn mmapq_idle_strategy_sleep_create(
         min_sleep_ns: u64,
         max_sleep_ns: u64,
         out: *mut *mut IdleStrategy,
     ) -> c_int;
 
-    pub fn idle_strategy_backoff_create(
+    pub fn mmapq_idle_strategy_backoff_create(
         spin_count: c_int,
         yield_count: c_int,
         max_sleep_ns: u64,
         out: *mut *mut IdleStrategy,
     ) -> c_int;
 
-    pub fn idle_strategy_destroy(strategy: *mut IdleStrategy);
+    pub fn mmapq_idle_strategy_destroy(strategy: *mut IdleStrategy);
 }
 
 /* ── IndexedQueue ─────────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_queue_create(
+    pub fn mmapq_indexed_queue_create(
         directory: *const c_char,
         queue_name: *const c_char,
         region_size: i32,
@@ -237,7 +237,7 @@ extern "C" {
         out_queue: *mut *mut IndexedQueue,
     ) -> i32;
 
-    pub fn indexed_queue_create_default(
+    pub fn mmapq_indexed_queue_create_default(
         directory: *const c_char,
         queue_name: *const c_char,
         write_runtime: *mut Runtime,
@@ -245,45 +245,45 @@ extern "C" {
         out_queue: *mut *mut IndexedQueue,
     ) -> i32;
 
-    pub fn indexed_queue_close(q: *mut IndexedQueue);
+    pub fn mmapq_indexed_queue_close(q: *mut IndexedQueue);
 
-    pub fn indexed_queue_create_appender(
+    pub fn mmapq_indexed_queue_create_appender(
         q: *mut IndexedQueue,
         out: *mut *mut IndexedAppender,
     ) -> i32;
 
-    pub fn indexed_queue_create_appender_with_id(
+    pub fn mmapq_indexed_queue_create_appender_with_id(
         q: *mut IndexedQueue,
         appender_id: u8,
         out: *mut *mut IndexedAppender,
     ) -> i32;
 
-    pub fn indexed_queue_create_poller(
+    pub fn mmapq_indexed_queue_create_poller(
         q: *mut IndexedQueue,
         out: *mut *mut IndexedPoller,
     ) -> i32;
 
-    pub fn indexed_queue_create_reader(
+    pub fn mmapq_indexed_queue_create_reader(
         q: *mut IndexedQueue,
         out: *mut *mut IndexedReader,
     ) -> i32;
 
-    pub fn indexed_queue_create_archiver(
+    pub fn mmapq_indexed_queue_create_archiver(
         q: *mut IndexedQueue,
         out: *mut *mut IndexedArchiver,
     ) -> i32;
 
-    pub fn indexed_queue_region_size(q: *const IndexedQueue) -> i32;
+    pub fn mmapq_indexed_queue_region_size(q: *const IndexedQueue) -> i32;
 
-    pub fn indexed_queue_max_file_size(q: *const IndexedQueue) -> i64;
+    pub fn mmapq_indexed_queue_max_file_size(q: *const IndexedQueue) -> i64;
 
-    pub fn indexed_queue_start_index(q: *const IndexedQueue) -> i64;
+    pub fn mmapq_indexed_queue_start_index(q: *const IndexedQueue) -> i64;
 }
 
 /* ── IndexedAppender ──────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_appender_create(
+    pub fn mmapq_indexed_appender_create(
         directory: *const c_char,
         queue_name: *const c_char,
         region_size: i32,
@@ -296,7 +296,7 @@ extern "C" {
         out: *mut *mut IndexedAppender,
     ) -> i32;
 
-    pub fn indexed_appender_create_with_id(
+    pub fn mmapq_indexed_appender_create_with_id(
         directory: *const c_char,
         queue_name: *const c_char,
         region_size: i32,
@@ -310,38 +310,38 @@ extern "C" {
         out: *mut *mut IndexedAppender,
     ) -> i32;
 
-    pub fn indexed_appender_append(
+    pub fn mmapq_indexed_appender_append(
         a: *mut IndexedAppender,
         data: *const c_void,
         length: i32,
     ) -> i64;
 
-    pub fn indexed_appender_append_uncommitted(
+    pub fn mmapq_indexed_appender_append_uncommitted(
         a: *mut IndexedAppender,
         data: *const c_void,
         length: i32,
     ) -> i64;
 
-    pub fn indexed_appender_commit(
+    pub fn mmapq_indexed_appender_commit(
         a: *mut IndexedAppender,
         payload_offset: i64,
     ) -> i64;
 
-    pub fn indexed_appender_close(a: *mut IndexedAppender);
+    pub fn mmapq_indexed_appender_close(a: *mut IndexedAppender);
 
-    pub fn indexed_appender_id(a: *const IndexedAppender) -> u8;
+    pub fn mmapq_indexed_appender_id(a: *const IndexedAppender) -> u8;
 
-    pub fn indexed_appender_current_index(a: *const IndexedAppender) -> i64;
+    pub fn mmapq_indexed_appender_current_index(a: *const IndexedAppender) -> i64;
 
-    pub fn indexed_appender_start_offset(a: *const IndexedAppender) -> i64;
+    pub fn mmapq_indexed_appender_start_offset(a: *const IndexedAppender) -> i64;
 
-    pub fn indexed_appender_iterator(
+    pub fn mmapq_indexed_appender_iterator(
         a: *mut IndexedAppender,
         start_offset: i64,
         end_offset: i64,
     ) -> *mut PayloadIterator;
 
-    pub fn indexed_appender_uncommitted_iterator(
+    pub fn mmapq_indexed_appender_uncommitted_iterator(
         a: *mut IndexedAppender,
         start_offset: i64,
         end_offset: i64,
@@ -351,7 +351,7 @@ extern "C" {
 /* ── IndexedPoller ────────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_poller_create(
+    pub fn mmapq_indexed_poller_create(
         directory: *const c_char,
         queue_name: *const c_char,
         ring_size: c_int,
@@ -360,38 +360,38 @@ extern "C" {
         out: *mut *mut IndexedPoller,
     ) -> i32;
 
-    pub fn indexed_poller_poll(
+    pub fn mmapq_indexed_poller_poll(
         p: *mut IndexedPoller,
         handler: MessageHandler,
         ctx: *mut c_void,
     ) -> c_int;
 
-    pub fn indexed_poller_move_to_index(
+    pub fn mmapq_indexed_poller_move_to_index(
         p: *mut IndexedPoller,
         index: i64,
     ) -> c_int;
 
-    pub fn indexed_poller_move_to_end(p: *mut IndexedPoller) -> c_int;
+    pub fn mmapq_indexed_poller_move_to_end(p: *mut IndexedPoller) -> c_int;
 
-    pub fn indexed_poller_move_to_last(p: *mut IndexedPoller) -> c_int;
+    pub fn mmapq_indexed_poller_move_to_last(p: *mut IndexedPoller) -> c_int;
 
-    pub fn indexed_poller_move_to_start(p: *mut IndexedPoller) -> c_int;
+    pub fn mmapq_indexed_poller_move_to_start(p: *mut IndexedPoller) -> c_int;
 
-    pub fn indexed_poller_close(p: *mut IndexedPoller);
+    pub fn mmapq_indexed_poller_close(p: *mut IndexedPoller);
 
-    pub fn indexed_poller_current_index(p: *const IndexedPoller) -> i64;
+    pub fn mmapq_indexed_poller_current_index(p: *const IndexedPoller) -> i64;
 
-    pub fn indexed_poller_start_index(p: *mut IndexedPoller) -> i64;
+    pub fn mmapq_indexed_poller_start_index(p: *mut IndexedPoller) -> i64;
 
-    pub fn indexed_poller_exists(p: *mut IndexedPoller, index: i64) -> c_int;
+    pub fn mmapq_indexed_poller_exists(p: *mut IndexedPoller, index: i64) -> c_int;
 
-    pub fn indexed_poller_last_error(p: *const IndexedPoller) -> c_int;
+    pub fn mmapq_indexed_poller_last_error(p: *const IndexedPoller) -> c_int;
 }
 
 /* ── IndexedReader ────────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_reader_create(
+    pub fn mmapq_indexed_reader_create(
         directory: *const c_char,
         queue_name: *const c_char,
         ring_size: c_int,
@@ -400,40 +400,40 @@ extern "C" {
         out: *mut *mut IndexedReader,
     ) -> i32;
 
-    pub fn indexed_reader_read(
+    pub fn mmapq_indexed_reader_read(
         r: *mut IndexedReader,
         index: i64,
         ctx: *mut ReadingContext,
     ) -> *mut ReadingContext;
 
-    pub fn indexed_reader_read_first(
+    pub fn mmapq_indexed_reader_read_first(
         r: *mut IndexedReader,
         ctx: *mut ReadingContext,
     ) -> *mut ReadingContext;
 
-    pub fn indexed_reader_read_last(
+    pub fn mmapq_indexed_reader_read_last(
         r: *mut IndexedReader,
         ctx: *mut ReadingContext,
     ) -> *mut ReadingContext;
 
-    pub fn indexed_reader_close(r: *mut IndexedReader);
+    pub fn mmapq_indexed_reader_close(r: *mut IndexedReader);
 
-    pub fn indexed_reader_last_index(r: *mut IndexedReader) -> i64;
+    pub fn mmapq_indexed_reader_last_index(r: *mut IndexedReader) -> i64;
 
-    pub fn indexed_reader_start_index(r: *mut IndexedReader) -> i64;
+    pub fn mmapq_indexed_reader_start_index(r: *mut IndexedReader) -> i64;
 
-    pub fn indexed_reader_entry_status(
+    pub fn mmapq_indexed_reader_entry_status(
         r: *mut IndexedReader,
         index: i64,
     ) -> c_int;
 
-    pub fn indexed_reader_last_error(r: *const IndexedReader) -> c_int;
+    pub fn mmapq_indexed_reader_last_error(r: *const IndexedReader) -> c_int;
 }
 
 /* ── IndexedArchiver ──────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_archiver_create(
+    pub fn mmapq_indexed_archiver_create(
         directory: *const c_char,
         queue_name: *const c_char,
         ring_size: c_int,
@@ -441,36 +441,36 @@ extern "C" {
         out: *mut *mut IndexedArchiver,
     ) -> i32;
 
-    pub fn indexed_archiver_archive_up_to_index(
+    pub fn mmapq_indexed_archiver_archive_up_to_index(
         a: *mut IndexedArchiver,
         index: i64,
     ) -> c_int;
 
-    pub fn indexed_archiver_archivable_files(
+    pub fn mmapq_indexed_archiver_archivable_files(
         a: *mut IndexedArchiver,
         paths_out: *mut *mut c_char,
         max_paths: c_int,
     ) -> c_int;
 
-    pub fn indexed_archiver_print_summary(
+    pub fn mmapq_indexed_archiver_print_summary(
         a: *mut IndexedArchiver,
         sb: *mut c_char,
         n: c_int,
     ) -> c_int;
 
-    pub fn indexed_archiver_start_offset(
+    pub fn mmapq_indexed_archiver_start_offset(
         a: *mut IndexedArchiver,
         appender_id: u8,
         out_offset: *mut i64,
     ) -> c_int;
 
-    pub fn indexed_archiver_close(a: *mut IndexedArchiver);
+    pub fn mmapq_indexed_archiver_close(a: *mut IndexedArchiver);
 }
 
 /* ── IndexedBatchQueue ────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_batch_queue_create(
+    pub fn mmapq_indexed_batch_queue_create(
         directory: *const c_char,
         queue_name: *const c_char,
         region_size: i32,
@@ -485,7 +485,7 @@ extern "C" {
         out: *mut *mut IndexedBatchQueue,
     ) -> i32;
 
-    pub fn indexed_batch_queue_create_default(
+    pub fn mmapq_indexed_batch_queue_create_default(
         directory: *const c_char,
         queue_name: *const c_char,
         write_runtime: *mut Runtime,
@@ -493,30 +493,30 @@ extern "C" {
         out: *mut *mut IndexedBatchQueue,
     ) -> i32;
 
-    pub fn indexed_batch_queue_close(q: *mut IndexedBatchQueue);
+    pub fn mmapq_indexed_batch_queue_close(q: *mut IndexedBatchQueue);
 
-    pub fn indexed_batch_queue_create_appender(
+    pub fn mmapq_indexed_batch_queue_create_appender(
         q: *mut IndexedBatchQueue,
         out: *mut *mut IndexedBatchAppender,
     ) -> i32;
 
-    pub fn indexed_batch_queue_create_appender_with_id(
+    pub fn mmapq_indexed_batch_queue_create_appender_with_id(
         q: *mut IndexedBatchQueue,
         appender_id: u8,
         out: *mut *mut IndexedBatchAppender,
     ) -> i32;
 
-    pub fn indexed_batch_queue_create_poller(
+    pub fn mmapq_indexed_batch_queue_create_poller(
         q: *mut IndexedBatchQueue,
         out: *mut *mut IndexedBatchPoller,
     ) -> i32;
 
-    pub fn indexed_batch_queue_create_reader(
+    pub fn mmapq_indexed_batch_queue_create_reader(
         q: *mut IndexedBatchQueue,
         out: *mut *mut IndexedBatchReader,
     ) -> i32;
 
-    pub fn indexed_batch_queue_create_archiver(
+    pub fn mmapq_indexed_batch_queue_create_archiver(
         q: *mut IndexedBatchQueue,
         out: *mut *mut IndexedBatchArchiver,
     ) -> i32;
@@ -526,7 +526,7 @@ extern "C" {
 /* ── IndexedBatchAppender ─────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_batch_appender_create(
+    pub fn mmapq_indexed_batch_appender_create(
         directory: *const c_char,
         queue_name: *const c_char,
         region_size: i32,
@@ -539,67 +539,67 @@ extern "C" {
         out: *mut *mut IndexedBatchAppender,
     ) -> i32;
 
-    pub fn indexed_batch_appender_start_batch(
+    pub fn mmapq_indexed_batch_appender_start_batch(
         a: *mut IndexedBatchAppender,
     ) -> *mut MutableBatch;
 
-    pub fn indexed_batch_appender_commit_batch(
+    pub fn mmapq_indexed_batch_appender_commit_batch(
         a: *mut IndexedBatchAppender,
         batch_offset: i64,
     ) -> i64;
 
-    pub fn indexed_batch_appender_discard_batch(
+    pub fn mmapq_indexed_batch_appender_discard_batch(
         a: *mut IndexedBatchAppender,
         batch_offset: i64,
     );
 
-    pub fn indexed_batch_appender_append_and_commit(
+    pub fn mmapq_indexed_batch_appender_append_and_commit(
         a: *mut IndexedBatchAppender,
         data: *const c_void,
         length: i32,
     ) -> i64;
 
-    pub fn mutable_batch_complete(b: *mut MutableBatch) -> i64;
+    pub fn mmapq_mutable_batch_complete(b: *mut MutableBatch) -> i64;
 
-    pub fn mutable_batch_append(
+    pub fn mmapq_mutable_batch_append(
         b: *mut MutableBatch,
         data: *const c_void,
         length: i32,
     ) -> i32;
 
-    pub fn mutable_batch_append_reserved(
+    pub fn mmapq_mutable_batch_append_reserved(
         b: *mut MutableBatch,
         length: i32,
         out_data: *mut *mut c_void,
     ) -> i32;
 
-    pub fn mutable_batch_append_remaining_from(
+    pub fn mmapq_mutable_batch_append_remaining_from(
         b: *mut MutableBatch,
         it: *mut BatchPayloadIterator,
     ) -> i32;
 
-    pub fn mutable_batch_get(
+    pub fn mmapq_mutable_batch_get(
         b: *mut MutableBatch,
         message_index: i32,
         out_length: *mut i32,
     ) -> *const c_void;
 
-    pub fn mutable_batch_iterator(
+    pub fn mmapq_mutable_batch_iterator(
         b: *mut MutableBatch,
         start_message_index: i32,
     ) -> *mut BatchPayloadIterator;
 
-    pub fn mutable_batch_message_count(b: *const MutableBatch) -> i32;
+    pub fn mmapq_mutable_batch_message_count(b: *const MutableBatch) -> i32;
 
-    pub fn indexed_batch_appender_id(a: *const IndexedBatchAppender) -> u8;
+    pub fn mmapq_indexed_batch_appender_id(a: *const IndexedBatchAppender) -> u8;
 
-    pub fn indexed_batch_appender_close(a: *mut IndexedBatchAppender);
+    pub fn mmapq_indexed_batch_appender_close(a: *mut IndexedBatchAppender);
 }
 
 /* ── IndexedBatchPoller ───────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_batch_poller_create(
+    pub fn mmapq_indexed_batch_poller_create(
         directory: *const c_char,
         queue_name: *const c_char,
         ring_size: c_int,
@@ -608,47 +608,47 @@ extern "C" {
         out: *mut *mut IndexedBatchPoller,
     ) -> i32;
 
-    pub fn indexed_batch_poller_poll(
+    pub fn mmapq_indexed_batch_poller_poll(
         p: *mut IndexedBatchPoller,
         handler: BatchHandler,
         ctx: *mut c_void,
     ) -> c_int;
 
-    pub fn indexed_batch_poller_move_to_index(
+    pub fn mmapq_indexed_batch_poller_move_to_index(
         p: *mut IndexedBatchPoller,
         index: i64,
     ) -> c_int;
 
-    pub fn indexed_batch_poller_move_to_end(p: *mut IndexedBatchPoller) -> c_int;
+    pub fn mmapq_indexed_batch_poller_move_to_end(p: *mut IndexedBatchPoller) -> c_int;
 
-    pub fn indexed_batch_poller_move_to_last_existing_batch(
+    pub fn mmapq_indexed_batch_poller_move_to_last_existing_batch(
         p: *mut IndexedBatchPoller,
     ) -> c_int;
 
-    pub fn indexed_batch_poller_move_to_start(p: *mut IndexedBatchPoller) -> c_int;
+    pub fn mmapq_indexed_batch_poller_move_to_start(p: *mut IndexedBatchPoller) -> c_int;
 
-    pub fn indexed_batch_poller_close(p: *mut IndexedBatchPoller);
+    pub fn mmapq_indexed_batch_poller_close(p: *mut IndexedBatchPoller);
 
-    pub fn indexed_batch_poller_current_batch_index(
+    pub fn mmapq_indexed_batch_poller_current_batch_index(
         p: *const IndexedBatchPoller,
     ) -> i64;
 
-    pub fn indexed_batch_poller_start_index(
+    pub fn mmapq_indexed_batch_poller_start_index(
         p: *mut IndexedBatchPoller,
     ) -> i64;
 
-    pub fn indexed_batch_poller_exists(
+    pub fn mmapq_indexed_batch_poller_exists(
         p: *mut IndexedBatchPoller,
         batch_index: i64,
     ) -> c_int;
 
-    pub fn indexed_batch_poller_last_error(p: *const IndexedBatchPoller) -> c_int;
+    pub fn mmapq_indexed_batch_poller_last_error(p: *const IndexedBatchPoller) -> c_int;
 }
 
 /* ── IndexedBatchReader ───────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_batch_reader_create(
+    pub fn mmapq_indexed_batch_reader_create(
         directory: *const c_char,
         queue_name: *const c_char,
         ring_size: c_int,
@@ -657,40 +657,40 @@ extern "C" {
         out: *mut *mut IndexedBatchReader,
     ) -> i32;
 
-    pub fn indexed_batch_reader_read(
+    pub fn mmapq_indexed_batch_reader_read(
         r: *mut IndexedBatchReader,
         index: i64,
         ctx: *mut BatchReadingContext,
     ) -> *mut BatchReadingContext;
 
-    pub fn indexed_batch_reader_read_first(
+    pub fn mmapq_indexed_batch_reader_read_first(
         r: *mut IndexedBatchReader,
         ctx: *mut BatchReadingContext,
     ) -> *mut BatchReadingContext;
 
-    pub fn indexed_batch_reader_read_last(
+    pub fn mmapq_indexed_batch_reader_read_last(
         r: *mut IndexedBatchReader,
         ctx: *mut BatchReadingContext,
     ) -> *mut BatchReadingContext;
 
-    pub fn indexed_batch_reader_close(r: *mut IndexedBatchReader);
+    pub fn mmapq_indexed_batch_reader_close(r: *mut IndexedBatchReader);
 
-    pub fn indexed_batch_reader_last_index(r: *mut IndexedBatchReader) -> i64;
+    pub fn mmapq_indexed_batch_reader_last_index(r: *mut IndexedBatchReader) -> i64;
 
-    pub fn indexed_batch_reader_start_index(r: *mut IndexedBatchReader) -> i64;
+    pub fn mmapq_indexed_batch_reader_start_index(r: *mut IndexedBatchReader) -> i64;
 
-    pub fn indexed_batch_reader_entry_status(
+    pub fn mmapq_indexed_batch_reader_entry_status(
         r: *mut IndexedBatchReader,
         index: i64,
     ) -> c_int;
 
-    pub fn indexed_batch_reader_last_error(r: *const IndexedBatchReader) -> c_int;
+    pub fn mmapq_indexed_batch_reader_last_error(r: *const IndexedBatchReader) -> c_int;
 }
 
 /* ── IndexedBatchArchiver ─────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn indexed_batch_archiver_create(
+    pub fn mmapq_indexed_batch_archiver_create(
         directory: *const c_char,
         queue_name: *const c_char,
         ring_size: c_int,
@@ -698,24 +698,24 @@ extern "C" {
         out: *mut *mut IndexedBatchArchiver,
     ) -> i32;
 
-    pub fn indexed_batch_archiver_archive_up_to_index(
+    pub fn mmapq_indexed_batch_archiver_archive_up_to_index(
         a: *mut IndexedBatchArchiver,
         index: i64,
     ) -> c_int;
 
-    pub fn indexed_batch_archiver_archivable_files(
+    pub fn mmapq_indexed_batch_archiver_archivable_files(
         a: *mut IndexedBatchArchiver,
         paths_out: *mut *mut c_char,
         max_paths: c_int,
     ) -> c_int;
 
-    pub fn indexed_batch_archiver_close(a: *mut IndexedBatchArchiver);
+    pub fn mmapq_indexed_batch_archiver_close(a: *mut IndexedBatchArchiver);
 }
 
 /* ── QueueTransfer ────────────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn queue_transfer_export(
+    pub fn mmapq_queue_transfer_export(
         reader: *mut IndexedReader,
         out: *mut libc::FILE,
         start: i64,
@@ -726,7 +726,7 @@ extern "C" {
         ctx: *mut c_void,
     ) -> i64;
 
-    pub fn queue_transfer_export_chunked(
+    pub fn mmapq_queue_transfer_export_chunked(
         reader: *mut IndexedReader,
         base_path: *const c_char,
         start: i64,
@@ -738,7 +738,7 @@ extern "C" {
         ctx: *mut c_void,
     ) -> i64;
 
-    pub fn queue_transfer_import(
+    pub fn mmapq_queue_transfer_import(
         in_file: *mut libc::FILE,
         directory: *const c_char,
         queue_name: *const c_char,
@@ -751,7 +751,7 @@ extern "C" {
         on_conflict: ConflictBehavior,
     ) -> i64;
 
-    pub fn queue_transfer_import_batch_stream(
+    pub fn mmapq_queue_transfer_import_batch_stream(
         in_file: *mut libc::FILE,
         directory: *const c_char,
         queue_name: *const c_char,
@@ -764,7 +764,7 @@ extern "C" {
         on_conflict: ConflictBehavior,
     ) -> i64;
 
-    pub fn queue_transfer_copy(
+    pub fn mmapq_queue_transfer_copy(
         reader: *mut IndexedReader,
         dest_dir: *const c_char,
         dest_queue: *const c_char,
@@ -782,7 +782,7 @@ extern "C" {
         on_conflict: ConflictBehavior,
     ) -> i64;
 
-    pub fn queue_transfer_copy_batch_to_normal(
+    pub fn mmapq_queue_transfer_copy_batch_to_normal(
         reader: *mut IndexedBatchReader,
         dest_dir: *const c_char,
         dest_queue: *const c_char,
@@ -804,7 +804,7 @@ extern "C" {
 /* ── BatchQueueTransfer ───────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn batch_queue_transfer_export(
+    pub fn mmapq_batch_queue_transfer_export(
         reader: *mut IndexedBatchReader,
         out: *mut libc::FILE,
         start: i64,
@@ -815,7 +815,7 @@ extern "C" {
         ctx: *mut c_void,
     ) -> i64;
 
-    pub fn batch_queue_transfer_export_chunked(
+    pub fn mmapq_batch_queue_transfer_export_chunked(
         reader: *mut IndexedBatchReader,
         base_path: *const c_char,
         start: i64,
@@ -827,7 +827,7 @@ extern "C" {
         ctx: *mut c_void,
     ) -> i64;
 
-    pub fn batch_queue_transfer_import(
+    pub fn mmapq_batch_queue_transfer_import(
         in_file: *mut libc::FILE,
         directory: *const c_char,
         queue_name: *const c_char,
@@ -840,7 +840,7 @@ extern "C" {
         on_conflict: ConflictBehavior,
     ) -> i64;
 
-    pub fn batch_queue_transfer_import_flat_stream(
+    pub fn mmapq_batch_queue_transfer_import_flat_stream(
         in_file: *mut libc::FILE,
         directory: *const c_char,
         queue_name: *const c_char,
@@ -853,7 +853,7 @@ extern "C" {
         on_conflict: ConflictBehavior,
     ) -> i64;
 
-    pub fn batch_queue_transfer_copy(
+    pub fn mmapq_batch_queue_transfer_copy(
         reader: *mut IndexedBatchReader,
         dest_dir: *const c_char,
         dest_queue: *const c_char,
@@ -871,7 +871,7 @@ extern "C" {
         on_conflict: ConflictBehavior,
     ) -> i64;
 
-    pub fn batch_queue_transfer_copy_normal_to_batch(
+    pub fn mmapq_batch_queue_transfer_copy_normal_to_batch(
         reader: *mut IndexedReader,
         dest_dir: *const c_char,
         dest_queue: *const c_char,
@@ -893,30 +893,30 @@ extern "C" {
 /* ── BatchPayloadIterator ─────────────────────────────────────────────────── */
 
 extern "C" {
-    pub fn batch_iterator_read_message_count(
+    pub fn mmapq_batch_iterator_read_message_count(
         it: *mut BatchPayloadIterator,
         batch_offset: i64,
     ) -> i32;
 
-    pub fn batch_iterator_probe_batch(
+    pub fn mmapq_batch_iterator_probe_batch(
         it: *mut BatchPayloadIterator,
         offset: i64,
     ) -> i64;
 
-    pub fn batch_iterator_init(
+    pub fn mmapq_batch_iterator_init(
         it: *mut BatchPayloadIterator,
         batch_offset: i64,
         message_count: i32,
         start_msg_index: i32,
     ) -> *mut BatchPayloadIterator;
 
-    pub fn batch_iterator_advance(it: *mut BatchPayloadIterator) -> c_int;
+    pub fn mmapq_batch_iterator_advance(it: *mut BatchPayloadIterator) -> c_int;
 
-    pub fn batch_iterator_current_data_ffi(
+    pub fn mmapq_batch_iterator_current_data_ffi(
         it: *const BatchPayloadIterator,
     ) -> *const c_void;
 
-    pub fn batch_iterator_current_length_ffi(
+    pub fn mmapq_batch_iterator_current_length_ffi(
         it: *const BatchPayloadIterator,
     ) -> i32;
 }

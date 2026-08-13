@@ -63,7 +63,7 @@ impl IndexedQueue {
 
         let mut ptr: *mut ffi::IndexedQueue = std::ptr::null_mut();
         let rc = unsafe {
-            ffi::indexed_queue_create(
+            ffi::mmapq_indexed_queue_create(
                 dir.as_ptr(),
                 name.as_ptr(),
                 config.region_size,
@@ -100,7 +100,7 @@ impl IndexedQueue {
     /// Returns `Err(IdConflict)` if all 256 IDs are in use.
     pub fn create_appender(&self) -> Result<super::appender::IndexedAppender, MmapError> {
         let mut ptr: *mut ffi::IndexedAppender = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_queue_create_appender(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_queue_create_appender(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -119,7 +119,7 @@ impl IndexedQueue {
     ) -> Result<super::appender::IndexedAppender, MmapError> {
         let mut ptr: *mut ffi::IndexedAppender = std::ptr::null_mut();
         let rc =
-            unsafe { ffi::indexed_queue_create_appender_with_id(self.inner, appender_id, &mut ptr) };
+            unsafe { ffi::mmapq_indexed_queue_create_appender_with_id(self.inner, appender_id, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -134,7 +134,7 @@ impl IndexedQueue {
     /// Starts at the queue's start index and advances on each successful poll.
     pub fn create_poller(&self) -> Result<super::poller::IndexedPoller, MmapError> {
         let mut ptr: *mut ffi::IndexedPoller = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_queue_create_poller(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_queue_create_poller(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -149,7 +149,7 @@ impl IndexedQueue {
     /// Call `read()` with any index to inspect a message without advancing a cursor.
     pub fn create_reader(&self) -> Result<super::reader::IndexedReader, MmapError> {
         let mut ptr: *mut ffi::IndexedReader = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_queue_create_reader(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_queue_create_reader(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -171,7 +171,7 @@ impl IndexedQueue {
     /// files that can be safely deleted.
     pub fn create_archiver(&self) -> Result<super::archiver::IndexedArchiver, MmapError> {
         let mut ptr: *mut ffi::IndexedArchiver = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_queue_create_archiver(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_queue_create_archiver(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -183,17 +183,17 @@ impl IndexedQueue {
 
     /// The configured region size in bytes (typically 4 MB).
     pub fn region_size(&self) -> i32 {
-        unsafe { ffi::indexed_queue_region_size(self.inner) }
+        unsafe { ffi::mmapq_indexed_queue_region_size(self.inner) }
     }
 
     /// The maximum payload file size in bytes (typically 1 GB).
     pub fn max_file_size(&self) -> i64 {
-        unsafe { ffi::indexed_queue_max_file_size(self.inner) }
+        unsafe { ffi::mmapq_indexed_queue_max_file_size(self.inner) }
     }
 
     /// The current start index (0 for non-archivable queues).
     pub fn start_index(&self) -> i64 {
-        unsafe { ffi::indexed_queue_start_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_queue_start_index(self.inner) }
     }
 
     #[allow(dead_code)]
@@ -205,7 +205,7 @@ impl IndexedQueue {
 impl Drop for IndexedQueue {
     fn drop(&mut self) {
         unsafe {
-            ffi::indexed_queue_close(self.inner);
+            ffi::mmapq_indexed_queue_close(self.inner);
         }
     }
 }

@@ -2,7 +2,7 @@
 //!
 //! Each `poll()` delivers one batch. The handler receives a mutable reference
 //! to a BatchReadingContext containing a BatchPayloadIterator positioned before
-//! the first message. The handler calls batch_iterator_advance() to iterate
+//! the first message. The handler calls mmapq_batch_iterator_advance() to iterate
 //! messages, then returns a NextMove directive (Advance, Stop, or Retreat).
 //!
 //! Thread-confined (`!Send + !Sync`). One per reader thread.
@@ -83,7 +83,7 @@ impl IndexedBatchPoller {
         };
 
         let result = unsafe {
-            ffi::indexed_batch_poller_poll(
+            ffi::mmapq_indexed_batch_poller_poll(
                 self.inner,
                 Some(c_batch_trampoline
                     as unsafe extern "C" fn(
@@ -102,50 +102,50 @@ impl IndexedBatchPoller {
         });
 
         match result {
-            ffi::POLL_ERROR => Err(map_rc(unsafe { ffi::indexed_batch_poller_last_error(self.inner) })),
+            ffi::MMAPQ_POLL_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_batch_poller_last_error(self.inner) })),
             _ => Ok(PollResult::from_ffi(result)),
         }
     }
 
     /// Move the cursor to a specific batch index.
     pub fn move_to_index(&mut self, index: i64) -> bool {
-        unsafe { ffi::indexed_batch_poller_move_to_index(self.inner, index) != 0 }
+        unsafe { ffi::mmapq_indexed_batch_poller_move_to_index(self.inner, index) != 0 }
     }
 
     /// Move the cursor to one past the last committed batch.
     pub fn move_to_end(&mut self) -> bool {
-        unsafe { ffi::indexed_batch_poller_move_to_end(self.inner) != 0 }
+        unsafe { ffi::mmapq_indexed_batch_poller_move_to_end(self.inner) != 0 }
     }
 
     /// Move the cursor to the last committed batch.
     pub fn move_to_last_existing_batch(&mut self) -> bool {
-        unsafe { ffi::indexed_batch_poller_move_to_last_existing_batch(self.inner) != 0 }
+        unsafe { ffi::mmapq_indexed_batch_poller_move_to_last_existing_batch(self.inner) != 0 }
     }
 
     /// Move the cursor to the earliest valid batch.
     pub fn move_to_start(&mut self) -> bool {
-        unsafe { ffi::indexed_batch_poller_move_to_start(self.inner) != 0 }
+        unsafe { ffi::mmapq_indexed_batch_poller_move_to_start(self.inner) != 0 }
     }
 
     /// The current batch index.
     pub fn current_batch_index(&self) -> i64 {
-        unsafe { ffi::indexed_batch_poller_current_batch_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_poller_current_batch_index(self.inner) }
     }
 
     /// The lowest readable batch index.
     pub fn start_index(&self) -> i64 {
-        unsafe { ffi::indexed_batch_poller_start_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_poller_start_index(self.inner) }
     }
 
     /// Return true if a committed batch exists at the given index.
     pub fn exists(&self, batch_index: i64) -> bool {
-        unsafe { ffi::indexed_batch_poller_exists(self.inner, batch_index) != 0 }
+        unsafe { ffi::mmapq_indexed_batch_poller_exists(self.inner, batch_index) != 0 }
     }
 }
 
 impl Drop for IndexedBatchPoller {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_batch_poller_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_poller_close(self.inner) }
     }
 }
 

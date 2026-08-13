@@ -52,7 +52,7 @@ impl IndexedArchiver {
     /// The backing files can be listed via `archivable_files()`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
         let rc = unsafe {
-            ffi::indexed_archiver_archive_up_to_index(self.inner, index)
+            ffi::mmapq_indexed_archiver_archive_up_to_index(self.inner, index)
         };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -69,7 +69,7 @@ impl IndexedArchiver {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
         let count = unsafe {
-            ffi::indexed_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
+            ffi::mmapq_indexed_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
         };
         if count <= 0 {
             return Ok(Vec::new());
@@ -86,7 +86,7 @@ impl IndexedArchiver {
     /// Return a human-readable summary of the queue's file layout.
     pub fn print_summary(&self) -> String {
         let mut buf = [0i8; 4096];
-        let n = unsafe { ffi::indexed_archiver_print_summary(self.inner, buf.as_mut_ptr(), 4096) };
+        let n = unsafe { ffi::mmapq_indexed_archiver_print_summary(self.inner, buf.as_mut_ptr(), 4096) };
         if n > 0 {
             unsafe { CStr::from_ptr(buf.as_ptr()) }
                 .to_string_lossy()
@@ -101,7 +101,7 @@ impl IndexedArchiver {
     pub fn start_offset(&self, appender_id: u8) -> Result<Option<i64>, MmapError> {
         let mut offset: i64 = 0;
         let ok = unsafe {
-            ffi::indexed_archiver_start_offset(self.inner, appender_id, &mut offset as *mut i64)
+            ffi::mmapq_indexed_archiver_start_offset(self.inner, appender_id, &mut offset as *mut i64)
         };
         if ok != 0 {
             Ok(Some(offset))
@@ -113,7 +113,7 @@ impl IndexedArchiver {
 
 impl Drop for IndexedArchiver {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_archiver_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_archiver_close(self.inner) }
     }
 }
 
@@ -128,7 +128,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("create base dir");
 
-        // Create an archivable queue — we need to call indexed_queue_create
+        // Create an archivable queue — we need to call mmapq_indexed_queue_create
         // directly with an archivable meta file. For now use the public API
         // (non-archivable) for a basic smoke test.
         let q = crate::IndexedQueue::create(

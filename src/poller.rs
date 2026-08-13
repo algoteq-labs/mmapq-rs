@@ -53,7 +53,7 @@ fn call_handler<H: FnMut(i64, u8, &[u8]) -> NextMove>(
 /// Single non-generic `extern "C"` trampoline that C calls.
 ///
 /// Catches panics from the user closure and stores them in a thread-local
-/// for re-raising after `indexed_poller_poll` returns.
+/// for re-raising after `mmapq_indexed_poller_poll` returns.
 ///
 /// # Safety
 ///
@@ -126,7 +126,7 @@ impl IndexedPoller {
         };
 
         let result = unsafe {
-            ffi::indexed_poller_poll(
+            ffi::mmapq_indexed_poller_poll(
                 self.inner,
                 Some(
                     c_trampoline
@@ -150,8 +150,8 @@ impl IndexedPoller {
         });
 
         match result {
-            ffi::POLL_CORRUPT => Err(MmapError::Corrupt("committed payload data is corrupt".into())),
-            ffi::POLL_ERROR => Err(map_rc(unsafe { ffi::indexed_poller_last_error(self.inner) })),
+            ffi::MMAPQ_POLL_CORRUPT => Err(MmapError::Corrupt("committed payload data is corrupt".into())),
+            ffi::MMAPQ_POLL_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_poller_last_error(self.inner) })),
             _ => Ok(PollResult::from_ffi(result)),
         }
     }
@@ -159,45 +159,45 @@ impl IndexedPoller {
     /// Move the cursor to a specific index.
     /// Returns `true` if the position is valid (not archived, not too far ahead).
     pub fn move_to_index(&mut self, index: i64) -> bool {
-        unsafe { ffi::indexed_poller_move_to_index(self.inner, index) != 0 }
+        unsafe { ffi::mmapq_indexed_poller_move_to_index(self.inner, index) != 0 }
     }
 
     /// Move the cursor to one past the last committed entry.
     /// After this call, `poll()` returns `EndOfStream` until a new message arrives.
     pub fn move_to_end(&mut self) -> bool {
-        unsafe { ffi::indexed_poller_move_to_end(self.inner) != 0 }
+        unsafe { ffi::mmapq_indexed_poller_move_to_end(self.inner) != 0 }
     }
 
     /// Move the cursor to the last committed entry.
     /// Returns `false` if the queue is empty.
     pub fn move_to_last(&mut self) -> bool {
-        unsafe { ffi::indexed_poller_move_to_last(self.inner) != 0 }
+        unsafe { ffi::mmapq_indexed_poller_move_to_last(self.inner) != 0 }
     }
 
     /// Move the cursor to the earliest valid entry (start index).
     pub fn move_to_start(&mut self) -> bool {
-        unsafe { ffi::indexed_poller_move_to_start(self.inner) != 0 }
+        unsafe { ffi::mmapq_indexed_poller_move_to_start(self.inner) != 0 }
     }
 
     /// The current cursor position.
     pub fn current_index(&self) -> i64 {
-        unsafe { ffi::indexed_poller_current_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_poller_current_index(self.inner) }
     }
 
     /// The lowest readable index (0 for non-archivable queues).
     pub fn start_index(&self) -> i64 {
-        unsafe { ffi::indexed_poller_start_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_poller_start_index(self.inner) }
     }
 
     /// Check whether a committed entry exists at the given index.
     pub fn exists(&self, index: i64) -> bool {
-        unsafe { ffi::indexed_poller_exists(self.inner, index) != 0 }
+        unsafe { ffi::mmapq_indexed_poller_exists(self.inner, index) != 0 }
     }
 }
 
 impl Drop for IndexedPoller {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_poller_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_poller_close(self.inner) }
     }
 }
 

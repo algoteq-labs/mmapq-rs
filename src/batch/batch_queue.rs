@@ -42,7 +42,7 @@ impl IndexedBatchQueue {
         let mut ptr: *mut ffi::IndexedBatchQueue = std::ptr::null_mut();
         let archivable = if config.get_archivable() { 1 } else { 0 };
         let rc = unsafe {
-            ffi::indexed_batch_queue_create(
+            ffi::mmapq_indexed_batch_queue_create(
                 dir.as_ptr(),
                 name.as_ptr(),
                 config.get_region_size(),
@@ -71,7 +71,7 @@ impl IndexedBatchQueue {
     /// Create a batch appender with a fresh ID from the pool.
     pub fn create_appender(&self) -> Result<super::batch_appender::IndexedBatchAppender, MmapError> {
         let mut ptr: *mut ffi::IndexedBatchAppender = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_batch_queue_create_appender(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_batch_queue_create_appender(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -89,7 +89,7 @@ impl IndexedBatchQueue {
     ) -> Result<super::batch_appender::IndexedBatchAppender, MmapError> {
         let mut ptr: *mut ffi::IndexedBatchAppender = std::ptr::null_mut();
         let rc = unsafe {
-            ffi::indexed_batch_queue_create_appender_with_id(self.inner, appender_id, &mut ptr)
+            ffi::mmapq_indexed_batch_queue_create_appender_with_id(self.inner, appender_id, &mut ptr)
         };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -104,7 +104,7 @@ impl IndexedBatchQueue {
     /// Create a batch poller for sequential consumption.
     pub fn create_poller(&self) -> Result<super::batch_poller::IndexedBatchPoller, MmapError> {
         let mut ptr: *mut ffi::IndexedBatchPoller = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_batch_queue_create_poller(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_batch_queue_create_poller(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -118,7 +118,7 @@ impl IndexedBatchQueue {
     /// Create a batch reader for random-access reads.
     pub fn create_reader(&self) -> Result<super::batch_reader::IndexedBatchReader, MmapError> {
         let mut ptr: *mut ffi::IndexedBatchReader = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_batch_queue_create_reader(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_batch_queue_create_reader(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -132,7 +132,7 @@ impl IndexedBatchQueue {
     /// Create a batch archiver.
     pub fn create_archiver(&self) -> Result<super::batch_archiver::IndexedBatchArchiver, MmapError> {
         let mut ptr: *mut ffi::IndexedBatchArchiver = std::ptr::null_mut();
-        let rc = unsafe { ffi::indexed_batch_queue_create_archiver(self.inner, &mut ptr) };
+        let rc = unsafe { ffi::mmapq_indexed_batch_queue_create_archiver(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -146,6 +146,6 @@ impl IndexedBatchQueue {
 
 impl Drop for IndexedBatchQueue {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_batch_queue_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_queue_close(self.inner) }
     }
 }

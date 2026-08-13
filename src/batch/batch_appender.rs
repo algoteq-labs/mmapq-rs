@@ -27,9 +27,9 @@ impl IndexedBatchAppender {
     /// - `append()` / `append_reserved()` add messages.
     /// - `commit()` finalises and consumes the writer.
     /// - Dropping without `commit()` auto-rolls back via
-    ///   `indexed_batch_appender_discard_batch()`.
+    ///   `mmapq_indexed_batch_appender_discard_batch()`.
     pub fn start_batch(&mut self) -> Result<BatchWriter<'_>, MmapError> {
-        let batch = unsafe { ffi::indexed_batch_appender_start_batch(self.inner) };
+        let batch = unsafe { ffi::mmapq_indexed_batch_appender_start_batch(self.inner) };
         if batch.is_null() {
             return Err(MmapError::MapTimedOut);
         }
@@ -43,7 +43,7 @@ impl IndexedBatchAppender {
 
     /// The appender's per-lane ID (0–255).
     pub fn id(&self) -> u8 {
-        unsafe { ffi::indexed_batch_appender_id(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_appender_id(self.inner) }
     }
 
     /// Convenience: start a batch, append one message, complete, and commit
@@ -58,7 +58,7 @@ impl IndexedBatchAppender {
     pub fn append_and_commit(&mut self, data: &[u8]) -> Result<i64, MmapError> {
         let len = checked_len(data.len())?;
         let idx = unsafe {
-            ffi::indexed_batch_appender_append_and_commit(
+            ffi::mmapq_indexed_batch_appender_append_and_commit(
                 self.inner,
                 data.as_ptr() as *const _,
                 len,
@@ -74,7 +74,7 @@ impl IndexedBatchAppender {
 
 impl Drop for IndexedBatchAppender {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_batch_appender_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_appender_close(self.inner) }
     }
 }
 
@@ -102,7 +102,7 @@ impl BatchWriter<'_> {
         }
         let len = checked_len(data.len())?;
         let idx = unsafe {
-            ffi::mutable_batch_append(self.batch, data.as_ptr() as *const _, len)
+            ffi::mmapq_mutable_batch_append(self.batch, data.as_ptr() as *const _, len)
         };
         if idx >= 0 {
             Ok(idx)
@@ -118,7 +118,7 @@ impl BatchWriter<'_> {
     pub fn append_reserved(&mut self, size: i32) -> Result<&mut [u8], MmapError> {
         let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
         let idx = unsafe {
-            ffi::mutable_batch_append_reserved(
+            ffi::mmapq_mutable_batch_append_reserved(
                 self.batch,
                 size,
                 &mut ptr as *mut *mut std::ffi::c_void,
@@ -133,7 +133,7 @@ impl BatchWriter<'_> {
     /// Append all remaining messages from a BatchPayloadIterator into this batch.
     ///
     /// The iterator must be positioned before or at the first un-copied message.
-    /// Useful for echoing an entire batch: call `batch_iterator_advance()` to
+    /// Useful for echoing an entire batch: call `mmapq_batch_iterator_advance()` to
     /// inspect the first message, then call `append_remaining_from()` — it
     /// starts from wherever the iterator currently is.
     ///
@@ -141,7 +141,7 @@ impl BatchWriter<'_> {
     /// exceeds the destination queue's region_size (batch is partially
     /// populated — must discard, not commit).
     pub fn append_remaining_from(&mut self, it: &mut ffi::BatchPayloadIterator) -> Result<i32, MmapError> {
-        let n = unsafe { ffi::mutable_batch_append_remaining_from(self.batch, it) };
+        let n = unsafe { ffi::mmapq_mutable_batch_append_remaining_from(self.batch, it) };
         if n >= 0 { Ok(n) } else { Err(map_rc(n)) }
     }
 
@@ -157,14 +157,14 @@ impl BatchWriter<'_> {
 
     /// Commit the batch, making it visible to pollers and readers.
     ///
-    /// Calls `mutable_batch_complete()` then
-    /// `indexed_batch_appender_commit_batch()`. Consumes `self`.
+    /// Calls `mmapq_mutable_batch_complete()` then
+    /// `mmapq_indexed_batch_appender_commit_batch()`. Consumes `self`.
     pub fn commit(mut self) -> Result<i64, MmapError> {
-        let batch_offset = unsafe { ffi::mutable_batch_complete(self.batch) };
+        let batch_offset = unsafe { ffi::mmapq_mutable_batch_complete(self.batch) };
         if batch_offset < 0 {
             return Err(map_rc(batch_offset as i32));
         }
-        let idx = unsafe { ffi::indexed_batch_appender_commit_batch(self.appender, batch_offset) };
+        let idx = unsafe { ffi::mmapq_indexed_batch_appender_commit_batch(self.appender, batch_offset) };
         if idx >= 0 {
             self.committed = true;
             Ok(idx)
@@ -177,9 +177,9 @@ impl BatchWriter<'_> {
 impl Drop for BatchWriter<'_> {
     fn drop(&mut self) {
         if !self.committed {
-            let batch_offset = unsafe { ffi::mutable_batch_complete(self.batch) };
+            let batch_offset = unsafe { ffi::mmapq_mutable_batch_complete(self.batch) };
             if batch_offset >= 0 {
-                unsafe { ffi::indexed_batch_appender_discard_batch(self.appender, batch_offset) }
+                unsafe { ffi::mmapq_indexed_batch_appender_discard_batch(self.appender, batch_offset) }
             }
         }
     }

@@ -38,15 +38,15 @@ impl IndexedReader {
     pub fn read(&self, index: i64) -> Result<Option<Message<'_>>, MmapError> {
         let ctx = self.ctx.get();
         unsafe {
-            ffi::indexed_reader_read(self.inner, index, ctx);
+            ffi::mmapq_indexed_reader_read(self.inner, index, ctx);
         }
         match unsafe { (*ctx).status } {
-            ffi::ENTRY_AVAILABLE => Ok(Some(Message {
+            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(Some(Message {
                 ctx: unsafe { &*ctx },
                 _phantom: PhantomData,
             })),
-            ffi::ENTRY_END_OF_STREAM | ffi::ENTRY_ARCHIVED => Ok(None),
-            ffi::ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_reader_last_error(self.inner) })),
+            ffi::MMAPQ_ENTRY_END_OF_STREAM | ffi::MMAPQ_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
@@ -55,15 +55,15 @@ impl IndexedReader {
     pub fn read_first(&self) -> Result<Option<Message<'_>>, MmapError> {
         let ctx = self.ctx.get();
         unsafe {
-            ffi::indexed_reader_read_first(self.inner, ctx);
+            ffi::mmapq_indexed_reader_read_first(self.inner, ctx);
         }
         match unsafe { (*ctx).status } {
-            ffi::ENTRY_AVAILABLE => Ok(Some(Message {
+            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(Some(Message {
                 ctx: unsafe { &*ctx },
                 _phantom: PhantomData,
             })),
-            ffi::ENTRY_END_OF_STREAM | ffi::ENTRY_ARCHIVED => Ok(None),
-            ffi::ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_reader_last_error(self.inner) })),
+            ffi::MMAPQ_ENTRY_END_OF_STREAM | ffi::MMAPQ_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
@@ -72,45 +72,45 @@ impl IndexedReader {
     pub fn read_last(&self) -> Result<Option<Message<'_>>, MmapError> {
         let ctx = self.ctx.get();
         unsafe {
-            ffi::indexed_reader_read_last(self.inner, ctx);
+            ffi::mmapq_indexed_reader_read_last(self.inner, ctx);
         }
         match unsafe { (*ctx).status } {
-            ffi::ENTRY_AVAILABLE => Ok(Some(Message {
+            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(Some(Message {
                 ctx: unsafe { &*ctx },
                 _phantom: PhantomData,
             })),
-            ffi::ENTRY_END_OF_STREAM | ffi::ENTRY_ARCHIVED => Ok(None),
-            ffi::ENTRY_ERROR => Err(map_rc(unsafe { ffi::indexed_reader_last_error(self.inner) })),
+            ffi::MMAPQ_ENTRY_END_OF_STREAM | ffi::MMAPQ_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
 
     /// Check availability of the entry at `index` without reading it.
     pub fn entry_status(&self, index: i64) -> EntryStatus {
-        let s = unsafe { ffi::indexed_reader_entry_status(self.inner, index) };
+        let s = unsafe { ffi::mmapq_indexed_reader_entry_status(self.inner, index) };
         match s {
-            ffi::ENTRY_AVAILABLE => EntryStatus::Available,
-            ffi::ENTRY_END_OF_STREAM => EntryStatus::EndOfStream,
-            ffi::ENTRY_ARCHIVED => EntryStatus::Archived,
-            ffi::ENTRY_ERROR => EntryStatus::Error,
-            other => { debug_assert!(false, "indexed_reader_entry_status: unknown status {}", other); EntryStatus::Error },
+            ffi::MMAPQ_ENTRY_AVAILABLE => EntryStatus::Available,
+            ffi::MMAPQ_ENTRY_END_OF_STREAM => EntryStatus::EndOfStream,
+            ffi::MMAPQ_ENTRY_ARCHIVED => EntryStatus::Archived,
+            ffi::MMAPQ_ENTRY_ERROR => EntryStatus::Error,
+            other => { debug_assert!(false, "mmapq_indexed_reader_entry_status: unknown status {}", other); EntryStatus::Error },
         }
     }
 
     /// The highest committed index, or -1 if the queue is empty.
     pub fn last_index(&self) -> i64 {
-        unsafe { ffi::indexed_reader_last_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_reader_last_index(self.inner) }
     }
 
     /// The lowest readable index (0 for non-archivable queues).
     pub fn start_index(&self) -> i64 {
-        unsafe { ffi::indexed_reader_start_index(self.inner) }
+        unsafe { ffi::mmapq_indexed_reader_start_index(self.inner) }
     }
 }
 
 impl Drop for IndexedReader {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_reader_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_reader_close(self.inner) }
     }
 }
 

@@ -4,7 +4,7 @@
 //! where each header entry points to a batch payload rather than a single
 //! message. The key difference in the forward archiving path is how the
 //! "next write offset" is calculated: for batches, the iterator must exhaust
-//! the entire batch (all messages) via `batch_iterator_exhaust()` to find
+//! the entire batch (all messages) via `mmapq_batch_iterator_exhaust()` to find
 //! `nextPayloadPosition`, whereas the normal archiver reads a single length
 //! field after the committed position.
 //!
@@ -51,7 +51,7 @@ impl IndexedBatchArchiver {
     /// **No-op** when `index == current start_index`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
         let rc = unsafe {
-            ffi::indexed_batch_archiver_archive_up_to_index(self.inner, index)
+            ffi::mmapq_indexed_batch_archiver_archive_up_to_index(self.inner, index)
         };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -68,7 +68,7 @@ impl IndexedBatchArchiver {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
         let count = unsafe {
-            ffi::indexed_batch_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
+            ffi::mmapq_indexed_batch_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
         };
         if count <= 0 {
             return Ok(Vec::new());
@@ -89,7 +89,7 @@ impl IndexedBatchArchiver {
 
 impl Drop for IndexedBatchArchiver {
     fn drop(&mut self) {
-        unsafe { ffi::indexed_batch_archiver_close(self.inner) }
+        unsafe { ffi::mmapq_indexed_batch_archiver_close(self.inner) }
     }
 }
 

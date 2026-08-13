@@ -5,8 +5,8 @@
 //! participant needs a file region mapped, it delegates the `mmap` call to
 //! the runtime thread so the hot-path thread is never blocked by page faults.
 //!
-//! Runtimes are reference-counted at the C level via `runtime_clone()` /
-//! `runtime_destroy()`. Cloning is cheap (one atomic increment). The
+//! Runtimes are reference-counted at the C level via `mmapq_runtime_clone()` /
+//! `mmapq_runtime_destroy()`. Cloning is cheap (one atomic increment). The
 //! underlying C runtime is freed when the last handle is dropped.
 //!
 //! `Runtime` is `Send + Sync` — its internal registration is mutex-guarded.
@@ -18,8 +18,8 @@ use crate::ffi;
 
 /// A dedicated background thread that polls registered Executables.
 ///
-/// `Runtime` is reference-counted at the C level via `runtime_clone()` /
-/// `runtime_destroy()`. Cloning is cheap (one atomic increment). The
+/// `Runtime` is reference-counted at the C level via `mmapq_runtime_clone()` /
+/// `mmapq_runtime_destroy()`. Cloning is cheap (one atomic increment). The
 /// underlying C runtime is freed when the last handle is dropped.
 ///
 /// `Runtime` is `Send + Sync` — its internal registration is mutex-guarded.
@@ -40,7 +40,7 @@ impl Runtime {
 
         let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
         let rc = unsafe {
-            ffi::runtime_create(
+            ffi::mmapq_runtime_create(
                 name.as_ptr(),
                 idle,
                 config.close_timeout_ns,
@@ -50,7 +50,7 @@ impl Runtime {
             )
         };
         if rc != 0 {
-            unsafe { ffi::idle_strategy_destroy(idle) };
+            unsafe { ffi::mmapq_idle_strategy_destroy(idle) };
             return Err(map_rc(rc));
         }
         Ok(Runtime { inner: ptr })
@@ -66,7 +66,7 @@ impl Runtime {
     /// remains alive.
     pub fn region_mapper() -> Result<Self, MmapError> {
         let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
-        let rc = unsafe { ffi::runtime_region_mapper(&mut ptr) };
+        let rc = unsafe { ffi::mmapq_runtime_region_mapper(&mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
@@ -74,9 +74,9 @@ impl Runtime {
         // Our handle adds a second reference so that dropping this handle
         // does not free the singleton.
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
-        let rc = unsafe { ffi::runtime_clone(ptr, &mut cloned) };
+        let rc = unsafe { ffi::mmapq_runtime_clone(ptr, &mut cloned) };
         if rc != 0 {
-            unsafe { ffi::runtime_destroy(ptr) };
+            unsafe { ffi::mmapq_runtime_destroy(ptr) };
             return Err(map_rc(rc));
         }
         Ok(Runtime { inner: cloned })
@@ -88,14 +88,14 @@ impl Runtime {
     /// for lower-priority periodic tasks.
     pub fn metrics_processor() -> Result<Self, MmapError> {
         let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
-        let rc = unsafe { ffi::runtime_metrics_processor(&mut ptr) };
+        let rc = unsafe { ffi::mmapq_runtime_metrics_processor(&mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
-        let rc = unsafe { ffi::runtime_clone(ptr, &mut cloned) };
+        let rc = unsafe { ffi::mmapq_runtime_clone(ptr, &mut cloned) };
         if rc != 0 {
-            unsafe { ffi::runtime_destroy(ptr) };
+            unsafe { ffi::mmapq_runtime_destroy(ptr) };
             return Err(map_rc(rc));
         }
         Ok(Runtime { inner: cloned })
@@ -105,12 +105,12 @@ impl Runtime {
     ///
     /// Returns `Ok(())` on success, or an error code from the C library.
     pub fn set_affinity(&self, cpu_core: u32) -> Result<(), MmapError> {
-        let ret = unsafe { ffi::runtime_set_affinity(self.inner, cpu_core as i32) };
+        let ret = unsafe { ffi::mmapq_runtime_set_affinity(self.inner, cpu_core as i32) };
         if ret == 0 {
             Ok(())
         } else {
             Err(MmapError::Internal(format!(
-                "runtime_set_affinity failed with code {}",
+                "mmapq_runtime_set_affinity failed with code {}",
                 ret
             )))
         }
@@ -118,7 +118,7 @@ impl Runtime {
 
     /// Returns `true` if the underlying C Runtime has been closed.
     pub fn is_closed(&self) -> bool {
-        unsafe { ffi::runtime_is_closed(self.inner) != 0 }
+        unsafe { ffi::mmapq_runtime_is_closed(self.inner) != 0 }
     }
 
     /// Access the raw C pointer (for use by other wrapper types).
@@ -130,8 +130,8 @@ impl Runtime {
 impl Clone for Runtime {
     fn clone(&self) -> Self {
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
-        let rc = unsafe { ffi::runtime_clone(self.inner, &mut cloned) };
-        assert_eq!(rc, 0, "runtime_clone failed with code {}", rc);
+        let rc = unsafe { ffi::mmapq_runtime_clone(self.inner, &mut cloned) };
+        assert_eq!(rc, 0, "mmapq_runtime_clone failed with code {}", rc);
         Runtime { inner: cloned }
     }
 }
@@ -139,7 +139,7 @@ impl Clone for Runtime {
 impl Drop for Runtime {
     fn drop(&mut self) {
         unsafe {
-            ffi::runtime_destroy(self.inner);
+            ffi::mmapq_runtime_destroy(self.inner);
         }
     }
 }
@@ -202,7 +202,7 @@ impl Default for RuntimeConfig {
 /// Idle behaviour applied by the Runtime thread when no work is available.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IdleStrategy {
-    /// Never yields — spins on `spin_hint()`. Lowest latency, 100% CPU.
+    /// Never yields — spins on `mmapq_spin_hint()`. Lowest latency, 100% CPU.
     BusySpin,
 
     /// Calls `sched_yield()` when idle. Lower CPU, slightly higher latency.
@@ -233,20 +233,20 @@ impl IdleStrategy {
         let rc = unsafe {
             match self {
                 IdleStrategy::BusySpin => {
-                    ffi::idle_strategy_busy_spin_create(&mut out)
+                    ffi::mmapq_idle_strategy_busy_spin_create(&mut out)
                 }
                 IdleStrategy::Yield => {
-                    ffi::idle_strategy_yield_create(&mut out)
+                    ffi::mmapq_idle_strategy_yield_create(&mut out)
                 }
                 IdleStrategy::Sleep { min_ns, max_ns } => {
-                    ffi::idle_strategy_sleep_create(min_ns, max_ns, &mut out)
+                    ffi::mmapq_idle_strategy_sleep_create(min_ns, max_ns, &mut out)
                 }
                 IdleStrategy::Backoff {
                     spin_count,
                     yield_count,
                     max_sleep_ns,
                 } => {
-                    ffi::idle_strategy_backoff_create(spin_count, yield_count, max_sleep_ns, &mut out)
+                    ffi::mmapq_idle_strategy_backoff_create(spin_count, yield_count, max_sleep_ns, &mut out)
                 }
             }
         };
@@ -290,7 +290,7 @@ mod tests {
         let rt = Runtime::new(config).expect("runtime creation should succeed");
         assert!(!rt.is_closed(), "runtime should be open after creation");
         drop(rt);
-        // No crash on drop — verifies runtime_destroy works
+        // No crash on drop — verifies mmapq_runtime_destroy works
     }
 
     #[test]
