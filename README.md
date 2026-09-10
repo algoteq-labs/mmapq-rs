@@ -1,8 +1,8 @@
 # mmapq
 
-[![License: BSD-2-Clause](https://img.shields.io/badge/License-BSD_2--Clause-blue.svg)](LICENSE)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
 
-**Safe, idiomatic Rust bindings for [mmapq](https://github.com/anton-anufriev/mmapq)** — a persistent,
+**Safe, idiomatic Rust bindings for [mmapq](https://github.com/algoteq-labs/mmapq)** — a persistent,
 indexed, replayable inter-process queue backed by memory-mapped files. No
 broker, no daemon, no garbage collector; the queue is just files.
 
@@ -18,7 +18,7 @@ This library was extracted from production trading infrastructure, where
 its Java ancestor carried FX flows for years. The design target is the
 storage layer for **event-sourced systems**: sequenced command queues,
 replicated event logs, and deterministic replay. For that architecture, see
-`doc/event-sourcing-guide.md` in the [mmapq](https://github.com/anton-anufriev/mmapq)
+`doc/event-sourcing-guide.md` in the [mmapq](https://github.com/algoteq-labs/mmapq)
 repository; for exact feature coverage across C, Rust, and Python, see
 `doc/feature-matrix.md`.
 
@@ -212,7 +212,7 @@ and [elara](https://github.com/tools4j/elara).
 
 ## License
 
-BSD 2-Clause — see [LICENSE](LICENSE).
+BSD 3-Clause — see [LICENSE](LICENSE).
 
 ## Platform
 
