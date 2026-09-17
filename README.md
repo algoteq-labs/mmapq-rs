@@ -2,17 +2,16 @@
 
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
 
-**Safe, idiomatic Rust bindings for [mmapq](https://github.com/algoteq-labs/mmapq)** — a persistent,
+**Rust bindings for [mmapq](https://github.com/algoteq-labs/mmapq)** — a persistent,
 indexed, replayable inter-process queue backed by memory-mapped files. No
 broker, no daemon, no garbage collector; the queue is just files.
 
 mmapq passes messages between processes on the same Linux machine with
 sub-microsecond latency and allocation-free hot paths. Unlike a transport,
-the queue is durable state: every message has a stable index, any process
-can read at any index, and a consumer that restarts resumes exactly where
-it stopped. These bindings add a thin, zero-overhead safety layer over the
-C library — the guarantees below are enforced by Rust's type system, not by
-convention.
+the queue retains file-backed history: every message has a stable index,
+and a consumer can resume from an index saved by its application. These
+bindings wrap the C library; the zero-copy limitations below require care
+in the current release.
 
 This library was extracted from production trading infrastructure, where
 its Java ancestor carried FX flows for years. The design target is the
@@ -22,11 +21,9 @@ replicated event logs, and deterministic replay. For that architecture, see
 repository; for exact feature coverage across C, Rust, and Python, see
 `doc/feature-matrix.md`.
 
-## What the bindings guarantee
+## Ownership and safety
 
-The reason to use these bindings rather than calling the C library through
-raw FFI is that they make the C contract's sharp edges unrepresentable in
-safe code:
+The bindings provide ownership and error handling around the C API:
 
 - **Runtime lifetime is enforced.** The C queue stores raw runtime pointers
   without owning them. These bindings make `IndexedQueue` and every
@@ -44,10 +41,12 @@ safe code:
   be touched again. Dropping a `BatchWriter` without committing rolls the
   batch back. In an event-sourced processor, an early return or `?` on an
   error path *is* a rollback: the partial batch never becomes visible.
-- **Reads cannot alias.** `IndexedReader::read(&mut self)` takes a mutable
-  borrow, so the returned message borrow blocks a second read at compile
-  time — the "flyweight overwritten under a live reference" bug that a
-  `&self` API would allow cannot be written.
+- **Zero-copy reads need caller discipline in 0.1.0.** Reader methods take
+  `&self`; another read or transfer can invalidate a live message. Copy a
+  message before another operation on its reader. Batch iterator slices can
+  be invalidated by advancing across mapped regions: copy each payload
+  before advancing and do not collect borrowed slices. Stricter borrowing
+  and iterator safety corrections are deferred to a separate release.
 - **Poll closures are panic-safe.** A panic inside a poll handler is caught
   at the FFI boundary and re-raised after the C stack frame unwinds cleanly,
   so a panicking closure cannot leave the C library in a torn state or
@@ -63,10 +62,16 @@ generated code is the same FFI calls you would write by hand.
 
 ## Quick start
 
+Use a persistent filesystem for `./data`. `/dev/shm` is volatile, and `/tmp`
+may be cleared on reboot. Commit makes messages visible; it does not flush
+them to stable storage or guarantee power-loss durability. Save consumer
+positions in application state and seek explicitly when resuming.
+
 ```rust
 use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all("./data")?;
     let rt = Runtime::region_mapper()?;
     let q = IndexedQueue::create(
         QueueConfig::new("./data", "my_queue")
@@ -75,9 +80,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     )?;
 
     let mut appender = q.create_appender()?;
-    appender.append(b"hello world")?;
+    let index = appender.append(b"hello world")?;
 
     let mut poller = q.create_poller()?;
+    poller.move_to_index(index);
     poller.poll(|_index, _appender_id, data| {
         println!("Received: {:?}", std::str::from_utf8(data));
         NextMove::Advance

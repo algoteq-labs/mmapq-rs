@@ -22,9 +22,18 @@
 //!
 //! ## Quick start
 //!
+//! Use a persistent filesystem for retained history. Commit publishes to
+//! readers but does not guarantee power-loss durability. Consumers must
+//! save their own progress and seek explicitly after reopening.
+//!
+//! Zero-copy reader methods currently take shared borrows: copy a message
+//! before another read or transfer on the same reader. Copy each batch
+//! iterator payload before advancing; mapped regions may be reused.
+//!
 //! ```no_run
 //! use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 //!
+//! std::fs::create_dir_all("./data").unwrap();
 //! let rt = Runtime::region_mapper().unwrap();
 //! let q = IndexedQueue::create(
 //!     QueueConfig::new("./data", "my_queue")

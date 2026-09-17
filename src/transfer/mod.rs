@@ -95,7 +95,10 @@ impl QueueTransfer {
             )
         };
 
-        unsafe { libc::fclose(file) };
+        let close_result = unsafe { libc::fclose(file) };
+        if close_result != 0 {
+            return Err(MmapError::Io(std::io::Error::last_os_error()));
+        }
 
         if result >= 0 {
             Ok(result as u64)
@@ -313,7 +316,10 @@ impl BatchQueueTransfer {
             )
         };
 
-        unsafe { libc::fclose(file) };
+        let close_result = unsafe { libc::fclose(file) };
+        if close_result != 0 {
+            return Err(MmapError::Io(std::io::Error::last_os_error()));
+        }
 
         if result >= 0 {
             Ok(result as u64)
