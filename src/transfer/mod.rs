@@ -96,15 +96,14 @@ impl QueueTransfer {
         };
 
         let close_result = unsafe { libc::fclose(file) };
+        if result < 0 {
+            return Err(crate::error::map_rc(result as i32));
+        }
         if close_result != 0 {
             return Err(MmapError::Io(std::io::Error::last_os_error()));
         }
 
-        if result >= 0 {
-            Ok(result as u64)
-        } else {
-            Err(crate::error::map_rc(result as i32))
-        }
+        Ok(result as u64)
     }
 
     /// Import entries from a flat stream file into a queue.
@@ -317,15 +316,14 @@ impl BatchQueueTransfer {
         };
 
         let close_result = unsafe { libc::fclose(file) };
+        if result < 0 {
+            return Err(crate::error::map_rc(result as i32));
+        }
         if close_result != 0 {
             return Err(MmapError::Io(std::io::Error::last_os_error()));
         }
 
-        if result >= 0 {
-            Ok(result as u64)
-        } else {
-            Err(crate::error::map_rc(result as i32))
-        }
+        Ok(result as u64)
     }
 
     /// Import batch entries from a flat stream file into a batch queue.

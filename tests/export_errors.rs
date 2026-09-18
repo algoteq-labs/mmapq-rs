@@ -1,6 +1,30 @@
 use mmapq::{IndexedQueue, QueueConfig, MmapError};
 use mmapq::batch::IndexedBatchQueue;
 use mmapq::transfer::{BatchQueueTransfer, QueueTransfer, StartIndexMode};
+use std::os::unix::fs::FileExt;
+
+#[test]
+fn batch_export_preserves_corruption_when_close_also_fails() {
+    let directory = std::env::temp_dir().join(format!("mmapq-export-corruption-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).unwrap();
+    let queue = IndexedBatchQueue::create(QueueConfig::new(directory.to_str().unwrap(), "batch")).unwrap();
+    let mut appender = queue.create_appender().unwrap();
+    let index = appender.append_and_commit(b"message").unwrap();
+    let reader = queue.create_reader().unwrap();
+    let offset = reader.read(index).unwrap().unwrap().batch_offset();
+    let payload = std::fs::OpenOptions::new().write(true)
+        .open(directory.join("batch").join(format!("payload_{}_0", appender.id()))).unwrap();
+    payload.write_all_at(&0_i32.to_le_bytes(), offset as u64 + 4).unwrap();
+    drop(payload);
+    for output in [directory.join("export.mmapq"), "/dev/full".into()] {
+        let result = BatchQueueTransfer::export(&reader, output.to_str().unwrap(), index, index, StartIndexMode::Rebase);
+        assert!(matches!(result, Err(MmapError::Corrupt(_))), "{result:?}");
+    }
+    drop(reader);
+    drop(appender);
+    drop(queue);
+    std::fs::remove_dir_all(directory).unwrap();
+}
 
 #[test]
 fn export_reports_buffered_write_failure() {
