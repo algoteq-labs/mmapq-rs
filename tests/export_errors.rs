@@ -10,14 +10,14 @@ fn batch_export_preserves_corruption_when_close_also_fails() {
     let queue = IndexedBatchQueue::create(QueueConfig::new(directory.to_str().unwrap(), "batch")).unwrap();
     let mut appender = queue.create_appender().unwrap();
     let index = appender.append_and_commit(b"message").unwrap();
-    let reader = queue.create_reader().unwrap();
+    let mut reader = queue.create_reader().unwrap();
     let offset = reader.read(index).unwrap().unwrap().batch_offset();
     let payload = std::fs::OpenOptions::new().write(true)
         .open(directory.join("batch").join(format!("payload_{}_0", appender.id()))).unwrap();
     payload.write_all_at(&0_i32.to_le_bytes(), offset as u64 + 4).unwrap();
     drop(payload);
     for output in [directory.join("export.mmapq"), "/dev/full".into()] {
-        let result = BatchQueueTransfer::export(&reader, output.to_str().unwrap(), index, index, StartIndexMode::Rebase);
+        let result = BatchQueueTransfer::export(&mut reader, output.to_str().unwrap(), index, index, StartIndexMode::Rebase);
         assert!(matches!(result, Err(MmapError::Corrupt(_))), "{result:?}");
     }
     drop(reader);
@@ -33,8 +33,8 @@ fn export_reports_buffered_write_failure() {
     let queue = IndexedQueue::create(QueueConfig::new(directory.to_str().unwrap(), "single")).unwrap();
     let mut appender = queue.create_appender().unwrap();
     let index = appender.append(b"message").unwrap();
-    let reader = queue.create_reader().unwrap();
-    let result = QueueTransfer::export(&reader, "/dev/full", index, index, StartIndexMode::Rebase);
+    let mut reader = queue.create_reader().unwrap();
+    let result = QueueTransfer::export(&mut reader, "/dev/full", index, index, StartIndexMode::Rebase);
     assert!(matches!(result, Err(MmapError::Io(_))), "{result:?}");
     drop(reader);
     drop(appender);
@@ -49,8 +49,8 @@ fn batch_export_reports_buffered_write_failure() {
     let queue = IndexedBatchQueue::create(QueueConfig::new(directory.to_str().unwrap(), "batch")).unwrap();
     let mut appender = queue.create_appender().unwrap();
     let index = appender.append_and_commit(b"message").unwrap();
-    let reader = queue.create_reader().unwrap();
-    let result = BatchQueueTransfer::export(&reader, "/dev/full", index, index, StartIndexMode::Rebase);
+    let mut reader = queue.create_reader().unwrap();
+    let result = BatchQueueTransfer::export(&mut reader, "/dev/full", index, index, StartIndexMode::Rebase);
     assert!(matches!(result, Err(MmapError::Io(_))), "{result:?}");
     drop(reader);
     drop(appender);

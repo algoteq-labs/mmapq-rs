@@ -13,9 +13,7 @@ use crate::ffi;
 pub struct IndexedBatchAppender {
     pub(crate) inner: *mut ffi::IndexedBatchAppender,
     /// Keeps the write runtime alive for this participant's lifetime
-    /// (batch queues currently always pass NULL runtimes — sync mapping —
-    /// so this is None today; the field exists so batch runtime support
-    /// cannot reintroduce the UAF fixed in tests/runtime_uaf.rs).
+    /// independently of the parent queue; None selects synchronous mapping.
     pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
@@ -28,10 +26,14 @@ impl IndexedBatchAppender {
     /// - `commit()` finalises and consumes the writer.
     /// - Dropping without `commit()` auto-rolls back via
     ///   `mmapq_indexed_batch_appender_discard_batch()`.
+    #[inline]
     pub fn start_batch(&mut self) -> Result<BatchWriter<'_>, MmapError> {
-        let batch = unsafe { ffi::mmapq_indexed_batch_appender_start_batch(self.inner) };
-        if batch.is_null() {
-            return Err(MmapError::MapTimedOut);
+        let mut batch = std::ptr::null_mut();
+        // SAFETY: The live appender is exclusively borrowed; batch is a writable output.
+        // Success supplies its active batch, whose guard retains this exclusive borrow.
+        let result = unsafe { ffi::mmapq_indexed_batch_appender_start_batch_checked(self.inner, &mut batch) };
+        if result != 0 {
+            return Err(map_rc(result));
         }
         Ok(BatchWriter {
             appender: self.inner,
@@ -43,6 +45,7 @@ impl IndexedBatchAppender {
 
     /// The appender's per-lane ID (0–255).
     pub fn id(&self) -> u8 {
+        // SAFETY: The owned, thread-confined handle stays live while C reads its scalar ID.
         unsafe { ffi::mmapq_indexed_batch_appender_id(self.inner) }
     }
 
@@ -57,6 +60,8 @@ impl IndexedBatchAppender {
     /// Returns the committed batch index, or an error code on failure.
     pub fn append_and_commit(&mut self, data: &[u8]) -> Result<i64, MmapError> {
         let len = checked_len(data.len())?;
+        // SAFETY: The live handle is exclusively borrowed; checked_len bounds
+        // data's readable bytes, which C copies before returning.
         let idx = unsafe {
             ffi::mmapq_indexed_batch_appender_append_and_commit(
                 self.inner,
@@ -74,6 +79,8 @@ impl IndexedBatchAppender {
 
 impl Drop for IndexedBatchAppender {
     fn drop(&mut self) {
+        // SAFETY: Drop uniquely owns the handle; no BatchWriter remains, and the runtime
+        // field is still alive while C closes the appender.
         unsafe { ffi::mmapq_indexed_batch_appender_close(self.inner) }
     }
 }
@@ -101,6 +108,8 @@ impl BatchWriter<'_> {
             return Err(MmapError::InvalidArgument);
         }
         let len = checked_len(data.len())?;
+        // SAFETY: The live handle is exclusively borrowed; checked_len bounds
+        // data's readable bytes, which C copies before returning.
         let idx = unsafe {
             ffi::mmapq_mutable_batch_append(self.batch, data.as_ptr() as *const _, len)
         };
@@ -117,6 +126,8 @@ impl BatchWriter<'_> {
     /// `append()` or `append_reserved()` call.
     pub fn append_reserved(&mut self, size: i32) -> Result<&mut [u8], MmapError> {
         let mut ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+        // SAFETY: self exclusively borrows the live active batch. C validates
+        // size before reserving mapped bytes; ptr is a writable output local.
         let idx = unsafe {
             ffi::mmapq_mutable_batch_append_reserved(
                 self.batch,
@@ -127,12 +138,15 @@ impl BatchWriter<'_> {
         if idx < 0 {
             return Err(map_rc(idx));
         }
+        // SAFETY: Successful reserve validates positive size within one mapped region.
+        // The bytes are initialized file-backed storage; this writer's exclusive borrow
+        // prevents append/remap/commit/rollback until the mutable slice is released.
         Ok(unsafe { std::slice::from_raw_parts_mut(ptr as *mut u8, size as usize) })
     }
 
     /// Append all remaining messages from a BatchPayloadIterator into this batch.
     ///
-    /// The iterator must be positioned before or at the first un-copied message.
+    /// The iterator advances before copying: the last yielded message is not copied again.
     /// Useful for echoing an entire batch: call `mmapq_batch_iterator_advance()` to
     /// inspect the first message, then call `append_remaining_from()` — it
     /// starts from wherever the iterator currently is.
@@ -141,6 +155,9 @@ impl BatchWriter<'_> {
     /// exceeds the destination queue's region_size (batch is partially
     /// populated — must discard, not commit).
     pub fn append_remaining_from(&mut self, it: &mut ffi::BatchPayloadIterator) -> Result<i32, MmapError> {
+        // SAFETY: self owns the active destination batch. The opaque iterator reference
+        // must originate from a live C cursor; its exclusive borrow excludes competing
+        // steps, and C copies source payloads before advancing that cursor.
         let n = unsafe { ffi::mmapq_mutable_batch_append_remaining_from(self.batch, it) };
         if n >= 0 { Ok(n) } else { Err(map_rc(n)) }
     }
@@ -152,6 +169,9 @@ impl BatchWriter<'_> {
         &mut self,
         iter: &mut BatchMessageIter<'_>,
     ) -> Result<i32, MmapError> {
+        // SAFETY: The cursor's constructor establishes its live C allocation and owner.
+        // Both exclusive borrows exclude outstanding source slices and destination
+        // reservations; neither owner can close or reposition during this copy.
         unsafe { self.append_remaining_from(&mut *iter.as_raw_iterator()) }
     }
 
@@ -160,10 +180,14 @@ impl BatchWriter<'_> {
     /// Calls `mmapq_mutable_batch_complete()` then
     /// `mmapq_indexed_batch_appender_commit_batch()`. Consumes `self`.
     pub fn commit(mut self) -> Result<i64, MmapError> {
+        // SAFETY: The guard keeps its appender and active batch alive and exclusively borrowed.
+        // Completing consumes no Rust references to reserved bytes.
         let batch_offset = unsafe { ffi::mmapq_mutable_batch_complete(self.batch) };
         if batch_offset < 0 {
             return Err(map_rc(batch_offset as i32));
         }
+        // SAFETY: batch_offset came from successful completion of this same active batch;
+        // self still exclusively borrows its live appender.
         let idx = unsafe { ffi::mmapq_indexed_batch_appender_commit_batch(self.appender, batch_offset) };
         if idx >= 0 {
             self.committed = true;
@@ -177,8 +201,12 @@ impl BatchWriter<'_> {
 impl Drop for BatchWriter<'_> {
     fn drop(&mut self) {
         if !self.committed {
+            // SAFETY: An uncommitted guard still exclusively owns its live batch/appender.
+            // No reserved slice can remain borrowed when the guard is dropped.
             let batch_offset = unsafe { ffi::mmapq_mutable_batch_complete(self.batch) };
             if batch_offset >= 0 {
+                // SAFETY: Completion succeeded for this same appender; discard rolls back the
+                // unpublished batch before the guard releases the appender borrow.
                 unsafe { ffi::mmapq_indexed_batch_appender_discard_batch(self.appender, batch_offset) }
             }
         }

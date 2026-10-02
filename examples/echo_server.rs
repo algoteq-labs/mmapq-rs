@@ -7,8 +7,14 @@ fn pin_thread(cpu: i32) {
     if cpu < 0 {
         return;
     }
+    // SAFETY: On supported Linux targets cpu_set_t is an integer bitset; all-zero
+    // bytes represent a valid empty set.
     let mut cpuset: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    // SAFETY: cpuset is an initialized, exclusively borrowed bitset. This libc
+    // implementation uses bounds-checked array indexing for the supplied CPU.
     unsafe { libc::CPU_SET(cpu as usize, &mut cpuset) };
+    // SAFETY: pthread_self supplies the live calling thread; cpuset is initialized
+    // and readable for its exact size during this synchronous affinity call.
     let ret = unsafe {
         libc::pthread_setaffinity_np(
             libc::pthread_self(),

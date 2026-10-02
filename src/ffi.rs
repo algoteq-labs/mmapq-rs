@@ -1,6 +1,24 @@
 #![allow(non_camel_case_types, non_snake_case, dead_code, missing_docs)]
 // ^^ missing_docs is suppressed because this is an FFI declarations file
-//    (not public API — public wrapper types are documented in their modules).
+//    (raw bindings; higher-level wrapper contracts live in their modules).
+
+//! Raw C ABI declarations, not a safe ownership layer.
+//!
+//! # Safety
+//!
+//! Callers of the foreign functions must satisfy the corresponding contracts in
+//! the vendored C headers under c/include. Handles must come from the matching
+//! successful C factory and remain live until their matching close/destroy;
+//! copied pointer values do not acquire ownership. Output pointers must be
+//! writable/aligned, buffers valid for their supplied length, and strings
+//! NUL-terminated. Retained runtime pointers must outlive their participants.
+//! Serialize operations on thread-confined handles. Returned mmap pointers
+//! have the accessor's invalidation lifetime, not an arbitrary Rust lifetime;
+//! do not mutate/truncate committed backing storage while slices exist.
+//!
+//! Foreign declarations are unsafe to call even though their syntax is `pub fn`
+//! inside `extern "C"`. Their callback types below likewise do not enforce
+//! Rust lifetimes. See doc/unsafe-audit.md for unresolved wrapper invariants.
 
 use libc::{c_char, c_int, c_void};
 
@@ -77,12 +95,23 @@ pub enum ConflictBehavior {
     Abort = 1,
 }
 
+/// Appender-ID mapping callback.
+///
+/// # Safety
+/// ctx must match the callback's live state for each synchronous invocation.
+/// The callback must not unwind across C or retain borrowed C storage.
 pub type AppenderIdMapper = Option<
     unsafe extern "C" fn(source_aid: u16, ctx: *mut c_void) -> i32,
 >;
 
 /* ── Callback types ───────────────────────────────────────────────────────── */
 
+/// Borrowed payload callback.
+///
+/// # Safety
+/// data must be readable for positive length bytes in one live mapping for the
+/// call. ctx must match the callback state; neither may escape or be used to
+/// reenter the same poller. Catch Rust panics before returning across C.
 pub type MessageHandler = Option<
     unsafe extern "C" fn(
         index: i64,
@@ -100,6 +129,10 @@ pub type MessageHandler = Option<
 ///
 /// Must return a NextMove cast to c_int (MMAPQ_NEXT_ADVANCE=0, MMAPQ_NEXT_STOP=1,
 /// MMAPQ_NEXT_RETREAT=2).
+/// # Safety
+/// context must reference a live, exclusively available C batch cursor whose
+/// owner/runtime outlive the callback. Do not retain it or a payload across
+/// invalidation. ctx must match live callback state; do not unwind across C.
 pub type BatchHandler = Option<
     unsafe extern "C" fn(
         batch_index: i64,
@@ -108,6 +141,11 @@ pub type BatchHandler = Option<
     ) -> c_int,
 >;
 
+/// Single-message filter; export may evaluate an entry more than once.
+///
+/// # Safety
+/// data must remain readable for length bytes during the call, and ctx must
+/// match live callback state. Do not retain data or unwind across C.
 pub type QueueFilterFn = Option<
     unsafe extern "C" fn(
         index: i64,
@@ -117,6 +155,11 @@ pub type QueueFilterFn = Option<
     ) -> c_int,
 >;
 
+/// Batch-message filter; export may evaluate a message more than once.
+///
+/// # Safety
+/// data must remain readable for length bytes during the call, and ctx must
+/// match live callback state. Do not retain data or unwind across C.
 pub type BatchQueueFilterFn = Option<
     unsafe extern "C" fn(
         batch_index: i64,
@@ -546,6 +589,8 @@ extern "C" {
         out: *mut *mut IndexedBatchAppender,
     ) -> i32;
 
+    pub fn mmapq_indexed_batch_appender_start_batch_checked(appender: *mut IndexedBatchAppender, out: *mut *mut MutableBatch) -> c_int;
+
     pub fn mmapq_indexed_batch_appender_start_batch(
         a: *mut IndexedBatchAppender,
     ) -> *mut MutableBatch;
@@ -918,6 +963,7 @@ extern "C" {
     ) -> *mut BatchPayloadIterator;
 
     pub fn mmapq_batch_iterator_advance(it: *mut BatchPayloadIterator) -> c_int;
+    pub fn mmapq_batch_iterator_next(iterator: *mut BatchPayloadIterator, data: *mut *const c_void, length: *mut i32) -> c_int;
 
     pub fn mmapq_batch_iterator_current_data_ffi(
         it: *const BatchPayloadIterator,

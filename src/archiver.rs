@@ -51,6 +51,9 @@ impl IndexedArchiver {
     ///
     /// The backing files can be listed via `archivable_files()`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
+        // SAFETY: UNRESOLVED: this archiver handle is owned and thread-confined, but its
+        // C runtime pointer is borrowed from the factory and not retained here.
+        // Mapping operations require that runtime to remain alive; see U2 in doc/unsafe-audit.md.
         let rc = unsafe {
             ffi::mmapq_indexed_archiver_archive_up_to_index(self.inner, index)
         };
@@ -68,6 +71,8 @@ impl IndexedArchiver {
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
+        // SAFETY: paths has MAX writable slots; C returns at most MAX owned strdup strings.
+        // UNRESOLVED: lazy initialization also needs the unretained runtime (U2).
         let count = unsafe {
             ffi::mmapq_indexed_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
         };
@@ -76,7 +81,11 @@ impl IndexedArchiver {
         }
         let mut result = Vec::with_capacity(count as usize);
         for i in 0..count as usize {
+            // SAFETY: A positive C count denotes initialized, non-null, NUL-terminated
+            // strdup results in paths; conversion copies the string before it is freed.
             let s = unsafe { CStr::from_ptr(paths[i]).to_string_lossy().into_owned() };
+            // SAFETY: This pointer came from C strdup, has been copied into Rust ownership,
+            // and is freed exactly once with the matching libc allocator.
             unsafe { libc::free(paths[i] as *mut libc::c_void) }
             result.push(s);
         }
@@ -86,8 +95,12 @@ impl IndexedArchiver {
     /// Return a human-readable summary of the queue's file layout.
     pub fn print_summary(&self) -> String {
         let mut buf = [0i8; 4096];
+        // SAFETY: buf supplies the full advertised writable capacity to snprintf-based C output.
+        // UNRESOLVED: the archiver's runtime lifetime is not retained (U2).
         let n = unsafe { ffi::mmapq_indexed_archiver_print_summary(self.inner, buf.as_mut_ptr(), 4096) };
         if n > 0 {
+            // SAFETY: C writes at most buf.len() bytes and NUL-terminates via snprintf.
+            // The initialized local buffer remains alive until conversion finishes.
             unsafe { CStr::from_ptr(buf.as_ptr()) }
                 .to_string_lossy()
                 .into_owned()
@@ -100,6 +113,8 @@ impl IndexedArchiver {
     /// appender has not written any messages.
     pub fn start_offset(&self, appender_id: u8) -> Result<Option<i64>, MmapError> {
         let mut offset: i64 = 0;
+        // SAFETY: offset is a writable local and the archiver is thread-confined.
+        // UNRESOLVED: C lazy initialization can use its unretained runtime (U2).
         let ok = unsafe {
             ffi::mmapq_indexed_archiver_start_offset(self.inner, appender_id, &mut offset as *mut i64)
         };
@@ -113,6 +128,8 @@ impl IndexedArchiver {
 
 impl Drop for IndexedArchiver {
     fn drop(&mut self) {
+        // SAFETY: Drop owns the handle and calls its matching destructor once.
+        // UNRESOLVED: closing async regions also requires the unretained runtime (U2).
         unsafe { ffi::mmapq_indexed_archiver_close(self.inner) }
     }
 }

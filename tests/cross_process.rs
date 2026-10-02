@@ -155,8 +155,8 @@ fn test_rust_client_c_batch_echo_server() {
     for _ in 0..50 {
         loop {
             let result = poller
-                .poll(|_b_idx, iter| {
-                    for (data, _aid) in iter {
+                .poll(|_b_idx, mut iter| {
+                    while let Some((data, _aid)) = iter.next().expect("batch iteration") {
                         let s = String::from_utf8_lossy(data);
                         assert!(
                             s.starts_with("batch-"),

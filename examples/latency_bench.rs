@@ -6,8 +6,14 @@ fn pin_thread(cpu: i32) {
     if cpu < 0 {
         return;
     }
+    // SAFETY: On supported Linux targets cpu_set_t is an integer bitset; all-zero
+    // bytes represent a valid empty set.
     let mut cpuset: libc::cpu_set_t = unsafe { std::mem::zeroed() };
+    // SAFETY: cpuset is an initialized, exclusively borrowed bitset. This libc
+    // implementation uses bounds-checked array indexing for the supplied CPU.
     unsafe { libc::CPU_SET(cpu as usize, &mut cpuset) };
+    // SAFETY: pthread_self supplies the live calling thread; cpuset is initialized
+    // and readable for its exact size during this synchronous affinity call.
     let ret = unsafe {
         libc::pthread_setaffinity_np(
             libc::pthread_self(),
@@ -25,6 +31,8 @@ fn monotonic_nanos() -> u64 {
         tv_sec: 0,
         tv_nsec: 0,
     };
+    // SAFETY: ts is an initialized, aligned, writable timespec; clock_gettime
+    // writes only that object and does not retain its address.
     unsafe { libc::clock_gettime(libc::CLOCK_MONOTONIC, &mut ts); }
     ts.tv_sec as u64 * 1_000_000_000 + ts.tv_nsec as u64
 }
@@ -79,6 +87,9 @@ impl LatencyProbe {
         self.response_received.store(false, Ordering::Relaxed);
         self.current_seq += 1;
 
+        // SAFETY: UNRESOLVED: LatencyHeader is packed (alignment 1) and the buffer is
+        // exclusively borrowed, but msg_size is not checked to cover its six bytes.
+        // Inputs below six bytes violate this reference's bounds (U3 in doc/unsafe-audit.md).
         let hdr = unsafe { &mut *(self.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
         hdr.instance_id = self.instance_id.to_be();
         hdr.sequence = self.current_seq.to_be();
@@ -283,6 +294,8 @@ fn send_shutdown(probe: &mut LatencyProbe) {
     let saved_seq = probe.current_seq;
     probe.current_seq = SHUTDOWN_SEQ;
 
+    // SAFETY: UNRESOLVED: packed alignment is sufficient, but this shutdown write
+    // also requires a six-byte buffer. CLI msg_size has no lower bound; see U3.
     let hdr = unsafe { &mut *(probe.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
     hdr.instance_id = probe.instance_id.to_be();
     hdr.sequence = SHUTDOWN_SEQ.to_be();

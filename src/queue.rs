@@ -2,11 +2,12 @@
 //!
 //! `IndexedQueue` is a thin config holder that delegates participant creation
 //! to the C library. All factory methods are re-entrant, making the queue
-//! safe to share across threads (`Send + Sync`). Only `close()` (called via
+//! independent of one another. Metadata getters have the unresolved Sync issue
+//! noted below. Only `close()` (called via
 //! `Drop`) requires exclusive access.
 //!
-//! Metadata is opened eagerly during `create()` to eliminate any lazy-init
-//! data race present in the raw C API.
+//! Safety audit: metadata getters still initialize a C cache lazily;
+//! the Sync justification for those getters is unresolved (doc/unsafe-audit.md).
 
 use std::ffi::CString;
 use std::marker::PhantomData;
@@ -17,13 +18,14 @@ use crate::runtime::Runtime;
 
 /// A factory for creating queue participants (appenders, pollers, readers).
 ///
-/// `IndexedQueue` is `Send + Sync` — it holds no mutable per-thread state.
+/// `IndexedQueue` currently implements `Send + Sync`, but the Sync contract
+/// is not established for metadata getters (see below).
 /// Participant creation is re-entrant. Only `close()` (called via `Drop`)
 /// requires exclusive access, which Rust's borrow checker enforces via
 /// `&mut self`.
 ///
-/// The queue's metadata is opened eagerly during `create()` to eliminate
-/// any lazy-init data race.
+/// Metadata getters currently have an unresolved lazy-initialization race
+/// when called concurrently; see doc/unsafe-audit.md.
 pub struct IndexedQueue {
     /* field order matters: `inner` is declared first so Drop closes the
        queue while `_write_rt`/`_read_rt` still hold the C runtimes alive. */
@@ -35,7 +37,12 @@ pub struct IndexedQueue {
     _read_rt: Option<Runtime>,
 }
 
+// SAFETY: Moving the factory transfers sole ownership of its C handle. Participant
+// handles own their own state, and retained Runtime handles are Send + Sync.
 unsafe impl Send for IndexedQueue {}
+// SAFETY: UNRESOLVED: metadata getters lazily write q->queue_meta without locking.
+// Construction does not eagerly initialize it despite the old documentation.
+// Concurrent shared getters can race; see doc/unsafe-audit.md (U1).
 unsafe impl Sync for IndexedQueue {}
 
 impl IndexedQueue {
@@ -43,8 +50,8 @@ impl IndexedQueue {
     ///
     /// The queue directory and metadata are created lazily (on first
     /// participant creation) if they do not exist — matching C semantics.
-    /// However, metadata is opened read-only immediately to pre-resolve
-    /// parameters, eliminating the lazy-init race present in the raw C API.
+    /// Metadata is not pre-opened here; concurrent metadata getters have the
+    /// unresolved race recorded in doc/unsafe-audit.md.
     pub fn create(mut config: QueueConfig) -> Result<Self, MmapError> {
         let dir = CString::new(config.directory.as_str())
             .map_err(|_| MmapError::Internal("directory contains null byte".into()))?;
@@ -61,6 +68,9 @@ impl IndexedQueue {
             .map_or(std::ptr::null_mut(), |r| r.as_ptr());
 
         let mut ptr: *mut ffi::IndexedQueue = std::ptr::null_mut();
+        // SAFETY: CString inputs and runtime handles outlive this synchronous call; out
+        // points to a writable local. C copies names, validates configuration, and
+        // returns an independently owned handle; Rust retains runtimes on success.
         let rc = unsafe {
             ffi::mmapq_indexed_queue_create(
                 dir.as_ptr(),
@@ -98,6 +108,8 @@ impl IndexedQueue {
     /// Returns `Err(IdConflict)` if all 256 IDs are in use.
     pub fn create_appender(&self) -> Result<super::appender::IndexedAppender, MmapError> {
         let mut ptr: *mut ffi::IndexedAppender = std::ptr::null_mut();
+        // SAFETY: The factory stays live under &self and out points to a writable local.
+        // C creates independent participant state; errors are checked before wrapping.
         let rc = unsafe { ffi::mmapq_indexed_queue_create_appender(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -117,6 +129,8 @@ impl IndexedQueue {
     ) -> Result<super::appender::IndexedAppender, MmapError> {
         let mut ptr: *mut ffi::IndexedAppender = std::ptr::null_mut();
         let rc =
+            // SAFETY: The shared factory is live; this factory reads immutable config, and ptr
+            // is a writable output for a new appender with the validated u8 lane ID.
             unsafe { ffi::mmapq_indexed_queue_create_appender_with_id(self.inner, appender_id, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -132,6 +146,8 @@ impl IndexedQueue {
     /// Starts at the queue's start index and advances on each successful poll.
     pub fn create_poller(&self) -> Result<super::poller::IndexedPoller, MmapError> {
         let mut ptr: *mut ffi::IndexedPoller = std::ptr::null_mut();
+        // SAFETY: The factory stays live under &self and out points to a writable local.
+        // C creates independent participant state; errors are checked before wrapping.
         let rc = unsafe { ffi::mmapq_indexed_queue_create_poller(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -147,6 +163,8 @@ impl IndexedQueue {
     /// Call `read()` with any index to inspect a message without advancing a cursor.
     pub fn create_reader(&self) -> Result<super::reader::IndexedReader, MmapError> {
         let mut ptr: *mut ffi::IndexedReader = std::ptr::null_mut();
+        // SAFETY: The factory stays live under &self and out points to a writable local.
+        // C creates independent participant state; errors are checked before wrapping.
         let rc = unsafe { ffi::mmapq_indexed_queue_create_reader(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -154,14 +172,14 @@ impl IndexedQueue {
         Ok(super::reader::IndexedReader {
             inner: ptr,
             _runtime: self._read_rt.clone(),
-            ctx: std::cell::UnsafeCell::new(ffi::ReadingContext {
+            ctx: ffi::ReadingContext {
                 index: 0,
                 appender_id: 0,
                 msg_offset: 0,
                 data: std::ptr::null(),
                 length: 0,
                 status: 0,
-            }),
+            },
         })
     }
 
@@ -169,6 +187,8 @@ impl IndexedQueue {
     /// files that can be safely deleted.
     pub fn create_archiver(&self) -> Result<super::archiver::IndexedArchiver, MmapError> {
         let mut ptr: *mut ffi::IndexedArchiver = std::ptr::null_mut();
+        // SAFETY: The factory stays live under &self and out points to a writable local.
+        // C creates independent participant state; errors are checked before wrapping.
         let rc = unsafe { ffi::mmapq_indexed_queue_create_archiver(self.inner, &mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
@@ -181,16 +201,22 @@ impl IndexedQueue {
 
     /// The configured region size in bytes (typically 4 MB).
     pub fn region_size(&self) -> i32 {
+        // SAFETY: UNRESOLVED: the handle is live, but C lazily writes queue_meta.
+        // &self plus Sync does not exclude concurrent initialization; see U1 in doc/unsafe-audit.md.
         unsafe { ffi::mmapq_indexed_queue_region_size(self.inner) }
     }
 
     /// The maximum payload file size in bytes (typically 1 GB).
     pub fn max_file_size(&self) -> i64 {
+        // SAFETY: UNRESOLVED: the handle is live, but the C metadata cache is unsynchronized;
+        // this shared getter participates in U1 in doc/unsafe-audit.md.
         unsafe { ffi::mmapq_indexed_queue_max_file_size(self.inner) }
     }
 
     /// The current start index (0 for non-archivable queues).
     pub fn start_index(&self) -> i64 {
+        // SAFETY: UNRESOLVED: atomic on-disk start_index does not protect lazy queue_meta
+        // pointer initialization; see U1 in doc/unsafe-audit.md.
         unsafe { ffi::mmapq_indexed_queue_start_index(self.inner) }
     }
 
@@ -202,6 +228,8 @@ impl IndexedQueue {
 
 impl Drop for IndexedQueue {
     fn drop(&mut self) {
+        // SAFETY: Drop has exclusive ownership of the factory and keeps both runtime fields
+        // alive until C close returns. Participant handles own independent C state.
         unsafe {
             ffi::mmapq_indexed_queue_close(self.inner);
         }

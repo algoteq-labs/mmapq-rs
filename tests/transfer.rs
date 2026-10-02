@@ -26,7 +26,7 @@ fn create_batch_queue(basename: &str) -> (IndexedBatchQueue, PathBuf) {
 
 fn verify_normal(dest: &Path, expected_si: i64, expected_li: i64) {
     let q = IndexedQueue::create(QueueConfig::new(dest.to_str().unwrap(), "q")).unwrap();
-    let r = q.create_reader().unwrap();
+    let mut r = q.create_reader().unwrap();
     assert_eq!(r.start_index(), expected_si);
     assert_eq!(r.last_index(), expected_li);
     assert!(r.read(expected_si).unwrap().is_some());
@@ -36,7 +36,7 @@ fn verify_normal(dest: &Path, expected_si: i64, expected_li: i64) {
 
 fn verify_batch(dest: &Path, expected_si: i64, expected_li: i64) {
     let q = IndexedBatchQueue::create(QueueConfig::new(dest.to_str().unwrap(), "q")).unwrap();
-    let r = q.create_reader().unwrap();
+    let mut r = q.create_reader().unwrap();
     assert_eq!(r.start_index(), expected_si);
     assert_eq!(r.last_index(), expected_li);
     drop(r);
@@ -50,9 +50,9 @@ fn test_export_import_roundtrip() {
     for i in 0..100 { a.append(format!("msg-{}", i).as_bytes()).unwrap(); }
     let li = a.current_index();
     drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, li, StartIndexMode::Rebase).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, li, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
     std::fs::remove_dir_all(src_dir.join("q")).ok();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("xfer_import");
@@ -68,9 +68,9 @@ fn test_export_preserve() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"msg").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    let n = QueueTransfer::export(&r, ep.to_str().unwrap(), 0, li, StartIndexMode::Preserve).unwrap();
+    let n = QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, li, StartIndexMode::Preserve).unwrap();
     assert_eq!(n, 1);
     drop(r); drop(q_src);
 
@@ -89,10 +89,10 @@ fn test_import_preserve() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"a").unwrap(); a.append(b"b").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let si = r.start_index();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, li, StartIndexMode::Preserve).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, li, StartIndexMode::Preserve).unwrap();
     drop(r); drop(q_src);
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
@@ -107,9 +107,9 @@ fn test_import_allow_append_false() {
     let (q_src, src_dir) = create_queue("import_no_append");
     let mut a = q_src.create_appender().unwrap();
     a.append(b"msg").unwrap(); let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, li, StartIndexMode::Rebase).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, li, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_no_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
@@ -124,9 +124,9 @@ fn test_import_allow_append_true() {
     let (q_src, src_dir) = create_queue("import_append");
     let mut a = q_src.create_appender().unwrap();
     a.append(b"msg").unwrap(); let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, li, StartIndexMode::Rebase).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, li, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("import_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
@@ -142,11 +142,11 @@ fn test_copy_roundtrip() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"c1").unwrap(); a.append(b"c2").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("copy_roundtrip_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let n = QueueTransfer::copy(&mut r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     drop(r); drop(q_src);
 }
@@ -157,12 +157,12 @@ fn test_copy_preserve() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"x").unwrap(); a.append(b"y").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let si = r.start_index();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("copy_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
+    let n = QueueTransfer::copy(&mut r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     verify_normal(&dest, si, si + 1);
     drop(r); drop(q_src);
@@ -173,12 +173,12 @@ fn test_copy_allow_append() {
     let (q_src, _src_dir) = create_queue("copy_append");
     let mut a = q_src.create_appender().unwrap();
     a.append(b"new").unwrap(); let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("copy_append_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
-    let n = QueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, true, None, ConflictBehavior::Auto).unwrap();
+    QueueTransfer::copy(&mut r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let n = QueueTransfer::copy(&mut r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, true, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     drop(r); drop(q_src);
 }
@@ -188,9 +188,9 @@ fn test_batch_export_import_roundtrip() {
     let (q_src, src_dir) = create_batch_queue("batch_xfer");
     let mut a = q_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"msg").unwrap(); b.commit().unwrap(); }
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    BatchQueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_import");
     let _ = std::fs::remove_dir_all(&dest);
@@ -204,9 +204,9 @@ fn test_batch_export_preserve() {
     let (q_src, src_dir) = create_batch_queue("batch_export_preserve");
     let mut a = q_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"msg").unwrap(); b.commit().unwrap(); }
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    let n = BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Preserve).unwrap();
+    let n = BatchQueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Preserve).unwrap();
     assert_eq!(n, 1);
     drop(r); drop(q_src);
 
@@ -224,9 +224,9 @@ fn test_batch_import_preserve() {
     let (q_src, src_dir) = create_batch_queue("batch_import_preserve");
     let mut a = q_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"msg").unwrap(); b.commit().unwrap(); }
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    BatchQueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_import_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
@@ -240,11 +240,11 @@ fn test_batch_copy_roundtrip() {
     let (q_src, _src_dir) = create_batch_queue("batch_copy");
     let mut a = q_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"bc1").unwrap(); b.commit().unwrap(); }
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_copy_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let n = BatchQueueTransfer::copy(&mut r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     drop(r); drop(q_src);
 }
@@ -254,12 +254,12 @@ fn test_batch_copy_preserve() {
     let (q_src, _src_dir) = create_batch_queue("batch_copy_preserve");
     let mut a = q_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"bcp").unwrap(); b.commit().unwrap(); }
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let si = r.start_index();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_copy_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
+    let n = BatchQueueTransfer::copy(&mut r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 1);
     verify_batch(&dest, si, si);
     drop(r); drop(q_src);
@@ -270,11 +270,11 @@ fn test_copy_batch_to_normal() {
     let (bq_src, _src_dir) = create_batch_queue("b2n");
     let mut a = bq_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"m1").unwrap(); b.append(b"m2").unwrap(); b.commit().unwrap(); }
-    let r = bq_src.create_reader().unwrap();
+    let mut r = bq_src.create_reader().unwrap();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("b2n_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy_from_batch(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let n = QueueTransfer::copy_from_batch(&mut r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     drop(r); drop(bq_src);
 }
@@ -284,12 +284,12 @@ fn test_copy_batch_to_normal_preserve() {
     let (bq_src, _src_dir) = create_batch_queue("b2n_preserve");
     let mut a = bq_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"m1").unwrap(); b.append(b"m2").unwrap(); b.commit().unwrap(); }
-    let r = bq_src.create_reader().unwrap();
+    let mut r = bq_src.create_reader().unwrap();
     let si = r.start_index();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("b2n_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = QueueTransfer::copy_from_batch(&r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
+    let n = QueueTransfer::copy_from_batch(&mut r, dest.to_str().unwrap(), "q", 0, 0, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     verify_normal(&dest, si, si + 1);
     drop(r); drop(bq_src);
@@ -301,11 +301,11 @@ fn test_copy_normal_to_batch() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"n2b_1").unwrap(); a.append(b"n2b_2").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("n2b_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy_from_normal(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
+    let n = BatchQueueTransfer::copy_from_normal(&mut r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Rebase, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     drop(r); drop(q_src);
 }
@@ -316,12 +316,12 @@ fn test_copy_normal_to_batch_preserve() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"n2b_1").unwrap(); a.append(b"n2b_2").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let si = r.start_index();
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("n2b_preserve_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
-    let n = BatchQueueTransfer::copy_from_normal(&r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
+    let n = BatchQueueTransfer::copy_from_normal(&mut r, dest.to_str().unwrap(), "q", 0, li, StartIndexMode::Preserve, false, None, ConflictBehavior::Auto).unwrap();
     assert_eq!(n, 2);
     verify_batch(&dest, si, si + 1);
     drop(r); drop(q_src);
@@ -340,7 +340,7 @@ fn test_copy_batch_to_normal_preserve_nonzero() {
     ).unwrap();
     let mut a = q.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"hello").unwrap(); b.commit().unwrap(); }
-    let r = q.create_reader().unwrap();
+    let mut r = q.create_reader().unwrap();
     assert_eq!(r.start_index(), 100);
     assert_eq!(r.last_index(), 100);
 
@@ -348,7 +348,7 @@ fn test_copy_batch_to_normal_preserve_nonzero() {
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
     let n = QueueTransfer::copy_from_batch(
-        &r, dest.to_str().unwrap(), "q", 100, 100, StartIndexMode::Preserve, false,
+        &mut r, dest.to_str().unwrap(), "q", 100, 100, StartIndexMode::Preserve, false,
         None, ConflictBehavior::Auto,
     ).unwrap();
     assert_eq!(n, 1);
@@ -369,14 +369,14 @@ fn test_copy_normal_to_batch_preserve_nonzero() {
     let mut a = q.create_appender().unwrap();
     a.append(b"world").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q.create_reader().unwrap();
+    let mut r = q.create_reader().unwrap();
     assert_eq!(r.start_index(), 100);
 
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("n2b_nonzero_dest");
     let _ = std::fs::remove_dir_all(&dest);
     std::fs::create_dir_all(&dest).unwrap();
     let n = BatchQueueTransfer::copy_from_normal(
-        &r, dest.to_str().unwrap(), "q", 100, li, StartIndexMode::Preserve, false,
+        &mut r, dest.to_str().unwrap(), "q", 100, li, StartIndexMode::Preserve, false,
         None, ConflictBehavior::Auto,
     ).unwrap();
     assert_eq!(n, 1);
@@ -396,10 +396,10 @@ fn test_import_batch_stream_preserve_nonzero() {
     ).unwrap();
     let mut a = q.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"test").unwrap(); b.commit().unwrap(); }
-    let r = q.create_reader().unwrap();
+    let mut r = q.create_reader().unwrap();
 
     let ep = dir.join("export.dat");
-    BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 100, 100, StartIndexMode::Preserve).unwrap();
+    BatchQueueTransfer::export(&mut r, ep.to_str().unwrap(), 100, 100, StartIndexMode::Preserve).unwrap();
     drop(r); drop(q);
 
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("rust_ibs_nonzero_dest");
@@ -425,10 +425,10 @@ fn test_import_flat_to_batch_preserve_nonzero() {
     let mut a = q.create_appender().unwrap();
     a.append(b"test").unwrap();
     let li = a.current_index(); drop(a);
-    let r = q.create_reader().unwrap();
+    let mut r = q.create_reader().unwrap();
 
     let ep = dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 100, li, StartIndexMode::Preserve).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 100, li, StartIndexMode::Preserve).unwrap();
     drop(r); drop(q);
 
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("rust_ifb_nonzero_dest");
@@ -458,9 +458,9 @@ fn test_import_preserves_appender_ids() {
     a1.append(b"from-a1-2").unwrap();
     drop(a1); drop(a2);
 
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 2, StartIndexMode::Rebase).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 2, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("aid_preserve_dest");
@@ -476,7 +476,7 @@ fn test_import_preserves_appender_ids() {
     let q_dest = IndexedQueue::create(
         QueueConfig::new(dest.to_str().unwrap(), "q"),
     ).unwrap();
-    let r_dest = q_dest.create_reader().unwrap();
+    let mut r_dest = q_dest.create_reader().unwrap();
     let mut seen_id1 = false;
     let mut seen_id2 = false;
     for i in 0..=r_dest.last_index() {
@@ -497,9 +497,9 @@ fn test_import_merge_via_mapper() {
     a2.append(b"from-a2").unwrap();
     drop(a1); drop(a2);
 
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 1, StartIndexMode::Rebase).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 1, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("aid_merge_dest");
@@ -529,9 +529,9 @@ fn test_import_auto_on_conflict() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"hello").unwrap();
     drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
     // Import with MMAPQ_CONFLICT_AUTO — should auto-assign since ID 0 is taken
@@ -545,7 +545,7 @@ fn test_import_auto_on_conflict() {
     let q_dest2 = IndexedQueue::create(
         QueueConfig::new(dest.to_str().unwrap(), "q"),
     ).unwrap();
-    let r_dest = q_dest2.create_reader().unwrap();
+    let mut r_dest = q_dest2.create_reader().unwrap();
     let msg = r_dest.read(0).unwrap().unwrap();
     assert_ne!(msg.appender_id(), 0, "auto-assign should not use the held ID 0");
     drop(r_dest); drop(q_dest2);
@@ -568,9 +568,9 @@ fn test_import_abort_on_conflict() {
     let mut a = q_src.create_appender().unwrap();
     a.append(b"hello").unwrap();
     drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    QueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    QueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
     // Import with MMAPQ_CONFLICT_ABORT — should get IdConflict error
@@ -596,9 +596,9 @@ fn test_batch_import_preserves_appender_ids() {
     { let mut b = a2.start_batch().unwrap(); b.append(b"a2").unwrap(); b.commit().unwrap(); }
     drop(a1); drop(a2);
 
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 0, 1, StartIndexMode::Rebase).unwrap();
+    BatchQueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 1, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
     let dest = std::env::temp_dir().join("mmap-rs-transfer-test").join("batch_aid_dest");
@@ -614,7 +614,7 @@ fn test_batch_import_preserves_appender_ids() {
     let q_dest = IndexedBatchQueue::create(
         QueueConfig::new(dest.to_str().unwrap(), "q"),
     ).unwrap();
-    let r_dest = q_dest.create_reader().unwrap();
+    let mut r_dest = q_dest.create_reader().unwrap();
     let _b0 = r_dest.read(0).unwrap().unwrap();
     let got0 = r_dest.appender_id();
     let _b1 = r_dest.read(1).unwrap().unwrap();
@@ -637,9 +637,9 @@ fn test_batch_import_abort_on_conflict() {
     let mut a = q_src.create_appender().unwrap();
     { let mut b = a.start_batch().unwrap(); b.append(b"hello").unwrap(); b.commit().unwrap(); }
     drop(a);
-    let r = q_src.create_reader().unwrap();
+    let mut r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export.dat");
-    BatchQueueTransfer::export(&r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
+    BatchQueueTransfer::export(&mut r, ep.to_str().unwrap(), 0, 0, StartIndexMode::Rebase).unwrap();
     drop(r); drop(q_src);
 
     let e = BatchQueueTransfer::import(
@@ -660,17 +660,24 @@ fn test_export_with_filter() {
     let li = a.current_index();
     drop(a);
 
+    /// # Safety
+    /// data must be readable for positive length bytes for this invocation.
+    /// The C exporter supplies a live mapped payload and does not retain the callback.
     unsafe extern "C" fn keep_filter(
         _idx: i64, data: *const std::ffi::c_void,
         length: i32, _ctx: *mut std::ffi::c_void,
     ) -> i32 {
-        let slice = std::slice::from_raw_parts(data as *const u8, length as usize);
+        // SAFETY: The exporter supplies a validated message in one live mapping;
+        // this slice is used only for starts_with and never retained.
+        let slice = unsafe { std::slice::from_raw_parts(data as *const u8, length as usize) };
         if slice.starts_with(b"keep") { 1 } else { 0 }
     }
 
     let r = q_src.create_reader().unwrap();
     let ep = src_dir.join("export_filtered.dat");
     let cpath = std::ffi::CString::new(ep.to_str().unwrap()).unwrap();
+    // SAFETY: cpath and the static mode are NUL-terminated and live for fopen;
+    // the returned FILE is checked before use.
     let file = unsafe {
         libc::fopen(
             cpath.as_ptr(),
@@ -679,6 +686,9 @@ fn test_export_with_filter() {
     };
     assert!(!file.is_null());
 
+    // SAFETY: The reader remains owned and has no live borrowed messages. file is a
+    // checked writable FILE; keep_filter is synchronous, does not retain the
+    // payload, and does not panic. No other access to the reader overlaps export.
     let n = unsafe {
         ffi::mmapq_queue_transfer_export(
             r.as_ptr(), file, 0, li, 0,
@@ -687,6 +697,8 @@ fn test_export_with_filter() {
             std::ptr::null_mut(),
         )
     };
+    // SAFETY: Export only borrows file; this is its single close after the callback
+    // has returned and before reading the output through the import API.
     unsafe { libc::fclose(file) };
     assert_eq!(n, 2);
 

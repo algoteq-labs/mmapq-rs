@@ -65,7 +65,7 @@ fn reader_wrong_type_is_schema_mismatch() {
         QueueConfig::new(&dir, "q").write_runtime(&rt).read_runtime(&rt),
     )
     .unwrap();
-    let reader = nq.create_reader().unwrap();
+    let mut reader = nq.create_reader().unwrap();
     let result = reader.read(0);
     assert!(matches!(result, Err(mmapq::MmapError::SchemaMismatch)),
         "reader on wrong queue type must return SchemaMismatch, got {:?}", result);

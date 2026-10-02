@@ -27,7 +27,11 @@ pub struct Runtime {
     inner: *mut ffi::Runtime,
 }
 
+// SAFETY: The C runtime is heap-owned and reference-counted atomically; moving a
+// handle does not move its worker state or require dropping on its creation thread.
 unsafe impl Send for Runtime {}
+// SAFETY: Shared methods use the C atomic refcount/closed flag or pthread affinity
+// API. Registration is mutex-protected; final destruction waits for the worker.
 unsafe impl Sync for Runtime {}
 
 impl Runtime {
@@ -39,6 +43,9 @@ impl Runtime {
         let idle = config.idle_strategy.into_c_ptr()?;
 
         let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
+        // SAFETY: All output pointers refer to writable locals. Runtime creation receives
+        // a live CString and uniquely owned idle strategy; C copies the name and takes
+        // idle ownership only on success. Idle factories return owned C strategies.
         let rc = unsafe {
             ffi::mmapq_runtime_create(
                 name.as_ptr(),
@@ -50,6 +57,8 @@ impl Runtime {
             )
         };
         if rc != 0 {
+            // SAFETY: Runtime creation failed without taking idle ownership, so this is its
+            // single cleanup using the matching C destructor.
             unsafe { ffi::mmapq_idle_strategy_destroy(idle) };
             return Err(map_rc(rc));
         }
@@ -66,16 +75,20 @@ impl Runtime {
     /// remains alive.
     pub fn region_mapper() -> Result<Self, MmapError> {
         let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
+        // SAFETY: The output is writable; C protects singleton lookup with its registry mutex
+        // and returns a counted reference, not an unowned borrowed pointer.
         let rc = unsafe { ffi::mmapq_runtime_region_mapper(&mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
-        // SAFETY: Must clone — the C singleton was created with refcount 1.
-        // Our handle adds a second reference so that dropping this handle
-        // does not free the singleton.
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
+        // SAFETY: The getter returned a live counted handle and cloned is writable.
+        // This extra clone is memory-valid but leaks the original reference on success;
+        // see R1 in doc/unsafe-audit.md.
         let rc = unsafe { ffi::mmapq_runtime_clone(ptr, &mut cloned) };
         if rc != 0 {
+            // SAFETY: The failed clone did not acquire another reference; release the counted
+            // reference acquired by the singleton getter.
             unsafe { ffi::mmapq_runtime_destroy(ptr) };
             return Err(map_rc(rc));
         }
@@ -88,13 +101,20 @@ impl Runtime {
     /// for lower-priority periodic tasks.
     pub fn metrics_processor() -> Result<Self, MmapError> {
         let mut ptr: *mut ffi::Runtime = std::ptr::null_mut();
+        // SAFETY: The output is writable; the mutex-protected registry returns a live counted
+        // reference independently of other callers.
         let rc = unsafe { ffi::mmapq_runtime_metrics_processor(&mut ptr) };
         if rc != 0 {
             return Err(map_rc(rc));
         }
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
+        // SAFETY: The getter returned a live counted handle and cloned is writable.
+        // This extra clone is memory-valid but leaks the original reference on success;
+        // see R1 in doc/unsafe-audit.md.
         let rc = unsafe { ffi::mmapq_runtime_clone(ptr, &mut cloned) };
         if rc != 0 {
+            // SAFETY: The failed clone did not acquire another reference; release the counted
+            // reference acquired by the singleton getter.
             unsafe { ffi::mmapq_runtime_destroy(ptr) };
             return Err(map_rc(rc));
         }
@@ -105,6 +125,8 @@ impl Runtime {
     ///
     /// Returns `Ok(())` on success, or an error code from the C library.
     pub fn set_affinity(&self, cpu_core: u32) -> Result<(), MmapError> {
+        // SAFETY: self retains a counted reference while the C function uses its pthread
+        // handle; the OS validates the requested CPU affinity.
         let ret = unsafe { ffi::mmapq_runtime_set_affinity(self.inner, cpu_core as i32) };
         if ret == 0 {
             Ok(())
@@ -112,12 +134,13 @@ impl Runtime {
             Err(MmapError::Internal(format!(
                 "mmapq_runtime_set_affinity failed with code {}",
                 ret
-            )))
+            ).into()))
         }
     }
 
     /// Returns `true` if the underlying C Runtime has been closed.
     pub fn is_closed(&self) -> bool {
+        // SAFETY: self holds a live counted handle; C reads the closed flag atomically.
         unsafe { ffi::mmapq_runtime_is_closed(self.inner) != 0 }
     }
 
@@ -130,6 +153,8 @@ impl Runtime {
 impl Clone for Runtime {
     fn clone(&self) -> Self {
         let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
+        // SAFETY: self keeps the handle live; C atomically acquires another reference and
+        // writes it to cloned before that reference is wrapped.
         let rc = unsafe { ffi::mmapq_runtime_clone(self.inner, &mut cloned) };
         assert_eq!(rc, 0, "mmapq_runtime_clone failed with code {}", rc);
         Runtime { inner: cloned }
@@ -138,6 +163,8 @@ impl Clone for Runtime {
 
 impl Drop for Runtime {
     fn drop(&mut self) {
+        // SAFETY: Drop releases exactly this wrapper's counted reference. C frees the runtime
+        // only after its final reference and worker shutdown.
         unsafe {
             ffi::mmapq_runtime_destroy(self.inner);
         }
@@ -230,6 +257,8 @@ pub enum IdleStrategy {
 impl IdleStrategy {
     fn into_c_ptr(self) -> Result<*mut ffi::IdleStrategy, MmapError> {
         let mut out: *mut ffi::IdleStrategy = std::ptr::null_mut();
+        // SAFETY: Each factory receives scalar configuration and the writable out
+        // local. C returns an owned strategy only on success; no Rust input is retained.
         let rc = unsafe {
             match self {
                 IdleStrategy::BusySpin => {

@@ -1,6 +1,7 @@
 //! Error types returned by mmapq-rs operations.
 
 use std::fmt;
+use std::borrow::Cow;
 
 /// Errors that can occur during queue operations.
 ///
@@ -25,7 +26,7 @@ pub enum MmapError {
     QueueClosed,
 
     /// The queue data is corrupted or inconsistent.
-    Corrupt(String),
+    Corrupt(Cow<'static, str>),
 
     /// Schema version or queue type mismatch on open (wrong queue kind,
     /// or file from an incompatible version).
@@ -39,7 +40,7 @@ pub enum MmapError {
     Io(std::io::Error),
 
     /// An internal invariant violation or unexpected condition.
-    Internal(String),
+    Internal(Cow<'static, str>),
 
     /// The runtime failed to stop within the configured timeout.
     RuntimeCloseTimeout,
@@ -56,6 +57,9 @@ pub enum MmapError {
 
     /// Queue meta file exists but is not yet fully initialised (transient, retry).
     NotReady,
+
+    UnexpectedCode(i32),
+    CallbackAborted,
 }
 
 /// Resolve the human-readable string for an `MMAPQ_*` error code.
@@ -94,12 +98,14 @@ impl fmt::Display for MmapError {
             MmapError::IdConflict => write!(f, "{}", c_strerror(-8)),
             MmapError::OutOfMemory => write!(f, "{}", c_strerror(-9)),
             MmapError::Eio => write!(f, "{}", c_strerror(-10)),
+            MmapError::CallbackAborted => write!(f, "{}", c_strerror(-12)),
             MmapError::NotReady => write!(f, "{}", c_strerror(-11)),
-            // Corrupt maps to ECORRUPT but keeps its Rust-owned payload.
+            // Corrupt maps to ECORRUPT but keeps its borrowed or owned payload.
             MmapError::Corrupt(msg) => write!(f, "corruption: {}", msg),
             // Rust-owned variants — no C code; text lives here.
             MmapError::Io(e) => write!(f, "I/O error: {}", e),
             MmapError::Internal(msg) => write!(f, "internal error: {}", msg),
+            MmapError::UnexpectedCode(code) => write!(f, "unexpected C return code: {}", code),
             MmapError::RuntimeCloseTimeout => write!(f, "runtime failed to stop within timeout"),
         }
     }
@@ -118,8 +124,11 @@ impl std::error::Error for MmapError {
 ///
 /// Call sites that receive a negative `i64` or `i32` from FFI should pass it
 /// through this function to get a consistent error type.
+#[cold]
+#[inline(never)]
 pub(crate) fn map_rc(rc: i32) -> MmapError {
     match rc {
+        -12 => MmapError::CallbackAborted,
         -11 => MmapError::NotReady,
         -10 => MmapError::Eio,
         -9 => MmapError::OutOfMemory,
@@ -127,14 +136,14 @@ pub(crate) fn map_rc(rc: i32) -> MmapError {
         -7 => MmapError::FileNotFound,
         -6 => MmapError::Exists,
         -5 => MmapError::SchemaMismatch,
-        // Corrupt keeps a Rust-owned payload, but its default text comes
+        // Corrupt keeps a borrowed or owned payload, but its default text comes
         // from C so the two cannot drift. Call sites with a more specific
         // message construct Corrupt directly.
         -4 => MmapError::Corrupt(c_strerror(-4).into()),
         -3 => MmapError::QueueClosed,
         -2 => MmapError::InvalidArgument,
         -1 => MmapError::MapTimedOut,
-        _  => MmapError::Internal(format!("unexpected C return code: {}", rc)),
+        _  => MmapError::UnexpectedCode(rc),
     }
 }
 
@@ -165,6 +174,7 @@ mod tests {
     #[test]
     fn test_map_rc_all_codes() {
         let cases = [
+            (-12, MmapError::CallbackAborted),
             (-1, MmapError::MapTimedOut),
             (-2, MmapError::InvalidArgument),
             (-3, MmapError::QueueClosed),
@@ -185,13 +195,13 @@ mod tests {
 
     #[test]
     fn test_map_rc_unknown() {
-        assert!(matches!(map_rc(-99), MmapError::Internal(_)));
+        assert!(matches!(map_rc(-99), MmapError::UnexpectedCode(_)));
     }
 
     #[test]
-    fn test_map_rc_non_negative_returns_internal() {
-        assert!(matches!(map_rc(0), MmapError::Internal(_)));
-        assert!(matches!(map_rc(42), MmapError::Internal(_)));
+    fn test_map_rc_non_negative_returns_unexpected_code() {
+        assert!(matches!(map_rc(0), MmapError::UnexpectedCode(_)));
+        assert!(matches!(map_rc(42), MmapError::UnexpectedCode(_)));
     }
 
     #[test]

@@ -50,6 +50,9 @@ impl IndexedBatchArchiver {
     ///
     /// **No-op** when `index == current start_index`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
+        // SAFETY: UNRESOLVED: this archiver handle is owned and thread-confined, but its
+        // C runtime pointer is borrowed from the factory and not retained here.
+        // Mapping operations require that runtime to remain alive; see U2 in doc/unsafe-audit.md.
         let rc = unsafe {
             ffi::mmapq_indexed_batch_archiver_archive_up_to_index(self.inner, index)
         };
@@ -67,6 +70,8 @@ impl IndexedBatchArchiver {
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
+        // SAFETY: paths has MAX writable slots; C returns at most MAX owned strdup strings.
+        // UNRESOLVED: lazy initialization also needs the unretained runtime (U2).
         let count = unsafe {
             ffi::mmapq_indexed_batch_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
         };
@@ -75,7 +80,11 @@ impl IndexedBatchArchiver {
         }
         let mut result = Vec::with_capacity(count as usize);
         for i in 0..count as usize {
+            // SAFETY: A positive C count denotes initialized, non-null, NUL-terminated
+            // strdup results in paths; conversion copies the string before it is freed.
             let s = unsafe { CStr::from_ptr(paths[i]).to_string_lossy().into_owned() };
+            // SAFETY: This pointer came from C strdup, has been copied into Rust ownership,
+            // and is freed exactly once with the matching libc allocator.
             unsafe { libc::free(paths[i] as *mut libc::c_void) }
             result.push(s);
         }
@@ -89,6 +98,8 @@ impl IndexedBatchArchiver {
 
 impl Drop for IndexedBatchArchiver {
     fn drop(&mut self) {
+        // SAFETY: Drop owns the handle and calls its matching destructor once.
+        // UNRESOLVED: closing async regions also requires the unretained runtime (U2).
         unsafe { ffi::mmapq_indexed_batch_archiver_close(self.inner) }
     }
 }

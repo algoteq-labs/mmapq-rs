@@ -55,6 +55,21 @@ file governs conduct; that file governs design.
 
 ## Correctness rules (hard)
 
+- **Every Rust unsafe boundary needs a specific safety justification.** Add
+  `# Safety` contracts to unsafe functions and nearby `// SAFETY:` comments
+  for unsafe blocks and impls. State why pointer validity, bounds, lifetimes,
+  aliasing, thread safety, and callback/panic requirements hold as applicable.
+  Keep blocks narrow; one explanation may cover a cohesive block. “Calls C”
+  or “tests pass” is not a proof. If an invariant cannot be established, mark
+  it as unresolved and report it rather than inventing a justification.
+
+- **Refactoring and optimization must not leave debris behind.** Redundant
+  blocks or braces, dead code, unused variables or helpers, and stale comments
+  left by a change are defects, even when behavior is correct and tests pass.
+  Review the resulting code, not just the edited lines, and remove leftovers
+  caused by the change before declaring it complete. This cleanup is part of
+  the task, not permission to refactor unrelated code.
+
 - **`MMAP_ASSERT` is for internal invariants only — never for validation.**
   It compiles to nothing under `-DNDEBUG`, which is how release builds ship.
   Anything checking caller input, on-disk data, file contents, allocation

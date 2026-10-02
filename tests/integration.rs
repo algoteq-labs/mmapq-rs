@@ -82,7 +82,7 @@ fn test_single_process_uncommitted_append() {
     drop(writer);
 
     // Read back with reader
-    let reader = q.create_reader().unwrap();
+    let mut reader = q.create_reader().unwrap();
     for (i, &expected_idx) in indices.iter().enumerate() {
         let msg = reader.read(expected_idx).unwrap().expect("message should exist");
         assert_eq!(msg.index(), expected_idx);
@@ -161,7 +161,7 @@ fn test_reader_metadata() {
     let last_idx = writer.append(b"d").unwrap();
     drop(writer);
 
-    let reader = q.create_reader().unwrap();
+    let mut reader = q.create_reader().unwrap();
 
     // Check last_index
     assert_eq!(reader.last_index(), last_idx);

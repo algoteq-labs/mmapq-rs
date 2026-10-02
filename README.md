@@ -41,12 +41,13 @@ The bindings provide ownership and error handling around the C API:
   be touched again. Dropping a `BatchWriter` without committing rolls the
   batch back. In an event-sourced processor, an early return or `?` on an
   error path *is* a rollback: the partial batch never becomes visible.
-- **Zero-copy reads need caller discipline in 0.1.0.** Reader methods take
-  `&self`; another read or transfer can invalidate a live message. Copy a
-  message before another operation on its reader. Batch iterator slices can
-  be invalidated by advancing across mapped regions: copy each payload
-  before advancing and do not collect borrowed slices. Stricter borrowing
-  and iterator safety corrections are deferred to a separate release.
+- **The upcoming hardening API enforces zero-copy borrowing.** Reads and
+  transfers borrow readers exclusively. A message must be processed before
+  another read. Batch cursors use a lending `next()`, not standard
+  `Iterator`: process each payload before advancing. No implicit payload
+  copies, heap ownership, locks, or runtime borrow checks are introduced.
+  This is source-breaking relative to published 0.1.0; see
+  [migration notes](doc/hardening-migration.md).
 - **Poll closures are panic-safe.** A panic inside a poll handler is caught
   at the FFI boundary and re-raised after the C stack frame unwinds cleanly,
   so a panicking closure cannot leave the C library in a torn state or

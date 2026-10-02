@@ -2,26 +2,21 @@ use std::marker::PhantomData;
 use std::slice;
 
 use crate::ffi;
+use crate::error::{map_rc, MmapError};
 
 /// Zero-copy iterator over messages in a single batch.
 ///
 /// Wraps the C `BatchPayloadIterator` and yields `(&[u8], u8)` pairs —
-/// the message payload (lifetime-bound to the containing reader/poller)
+/// the message payload (borrowed until the next cursor step)
 /// and the appender ID that wrote the batch.
 ///
-/// The lifetime `'a` is tied to the `BatchReadingContext` or the
-/// reader/poller that owns the mapped region. The returned byte slices
-/// are valid for `'a` — they point into memory-mapped payload data that
-/// is stable as long as the reader/poller exists.
-///
-/// # Panics
-///
-/// The `Iterator` impl does not panic. The underlying C functions may
-/// abort on internal invariant violations (never on caller input).
+/// Each payload borrows the current exclusive cursor step. Process it before
+/// advancing again; its lifetime does not extend to the whole batch.
+/// Mapping and framing errors are returned without allocating.
 pub struct BatchMessageIter<'a> {
     iterator: *mut ffi::BatchPayloadIterator,
     appender_id: u8,
-    _lifetime: PhantomData<&'a ()>,
+    _lifetime: PhantomData<&'a mut ffi::BatchReadingContext>,
 }
 
 impl<'a> BatchMessageIter<'a> {
@@ -31,7 +26,15 @@ impl<'a> BatchMessageIter<'a> {
     ///
     /// The iterator starts **before** message 0 — the first call to
     /// `next()` advances to the first message.
-    pub fn new(ctx: &'a mut ffi::BatchReadingContext) -> Self {
+    ///
+    /// # Safety
+    ///
+    /// `ctx.iterator` must be non-null and initialized by a successful C read
+    /// or poll. Its reader/poller and runtime must remain alive for `'a`.
+    /// No other access path may advance, reset, exhaust, or close that cursor
+    /// during this borrow. Advancing this cursor may remap its payload; the
+    /// current step's mapping must remain valid until that step's borrow ends.
+    pub(crate) unsafe fn new(ctx: &'a mut ffi::BatchReadingContext) -> Self {
         BatchMessageIter {
             iterator: ctx.iterator,
             appender_id: ctx.appender_id,
@@ -45,33 +48,43 @@ impl<'a> BatchMessageIter<'a> {
     ///
     /// `ctx` must point to a valid `BatchReadingContext` whose
     /// `iterator` has been initialised by a read or poll call.
-    /// The mapped memory backing the returned slices must remain mapped
-    /// (i.e. the reader/poller must not be dropped or re-wrapped) for
-    /// the lifetime `'a`.
-    pub unsafe fn from_raw(ctx: *mut ffi::BatchReadingContext) -> Self {
-        BatchMessageIter {
-            iterator: (*ctx).iterator,
-            appender_id: (*ctx).appender_id,
-            _lifetime: PhantomData,
+    /// The caller must establish the same owner lifetime and exclusive cursor
+    /// access as `new()` for `'a`; raw pointers do not carry that lifetime.
+    /// `ctx` must be aligned and readable during construction. Each payload
+    /// mapping must remain valid for its step borrow, not the entire batch.
+    pub(crate) unsafe fn from_raw(ctx: *mut ffi::BatchReadingContext) -> Self {
+        // SAFETY: The caller guarantees ctx is a live, aligned context and
+        // establishes the owner lifetime/exclusive access recorded by PhantomData.
+        unsafe {
+            BatchMessageIter {
+                iterator: (*ctx).iterator,
+                appender_id: (*ctx).appender_id,
+                _lifetime: PhantomData,
+            }
         }
     }
 }
 
-impl<'a> Iterator for BatchMessageIter<'a> {
-    type Item = (&'a [u8], u8);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        let advanced = unsafe { ffi::mmapq_batch_iterator_advance(self.iterator) };
-        if advanced == 0 {
-            return None;
+impl BatchMessageIter<'_> {
+    /// Advance without copying. Failure remains sticky until the batch is read again.
+    #[inline]
+    pub fn next(&mut self) -> Result<Option<(&[u8], u8)>, MmapError> {
+        let mut data = std::ptr::null();
+        let mut length = 0;
+        // SAFETY: Construction guarantees a live, exclusively held C cursor and owner.
+        // The mutable step borrow excludes live payload slices; outputs are writable locals.
+        let result = unsafe { ffi::mmapq_batch_iterator_next(self.iterator, &mut data, &mut length) };
+        match result {
+            0 => Ok(None),
+            1 => {
+                // SAFETY: The checked C step returned a positive length within the current mapping.
+                // The slice borrows this exclusive cursor step; it cannot survive another step.
+                // Committed bytes must not be externally overwritten or truncated.
+                let payload = unsafe { slice::from_raw_parts(data as *const u8, length as usize) };
+                Ok(Some((payload, self.appender_id)))
+            }
+            error => Err(map_rc(error)),
         }
-        let data = unsafe { ffi::mmapq_batch_iterator_current_data_ffi(self.iterator) };
-        let length = unsafe { ffi::mmapq_batch_iterator_current_length_ffi(self.iterator) };
-        if length <= 0 {
-            return None;
-        }
-        let slice = unsafe { slice::from_raw_parts(data as *const u8, length as usize) };
-        Some((slice, self.appender_id))
     }
 }
 
@@ -84,10 +97,12 @@ impl BatchMessageIter<'_> {
     ///
     /// # Safety
     ///
-    /// Returns `*mut` from `&self` — the caller gains mutable access to
+    /// Returns `*mut` from `&mut self` — the caller gains mutable access to
     /// the C iterator through this pointer. The returned pointer must not
-    /// be used concurrently with any other access to this iterator.
-    pub unsafe fn as_raw_iterator(&self) -> *mut ffi::BatchPayloadIterator {
+    /// be used concurrently with any other access to this iterator. Any later
+    /// use must also keep its owner alive and must not advance/reset it while
+    /// a payload slice is borrowed. The raw pointer does not retain the borrow.
+    pub unsafe fn as_raw_iterator(&mut self) -> *mut ffi::BatchPayloadIterator {
         self.iterator
     }
 }
@@ -123,8 +138,8 @@ mod tests {
 
         let mut messages: Vec<Vec<u8>> = Vec::new();
         let result = p
-            .poll(|_bi, iter| {
-                for (data, _aid) in iter {
+            .poll(|_bi, mut iter| {
+                while let Some((data, _aid)) = iter.next().expect("batch iteration") {
                     messages.push(data.to_vec());
                 }
                 NextMove::Advance
@@ -161,8 +176,8 @@ mod tests {
         let mut p = q.create_poller().unwrap();
         let mut messages: Vec<Vec<u8>> = Vec::new();
         let result = p
-            .poll(|_bi, iter| {
-                for (data, _aid) in iter {
+            .poll(|_bi, mut iter| {
+                while let Some((data, _aid)) = iter.next().expect("batch iteration") {
                     messages.push(data.to_vec());
                 }
                 NextMove::Advance

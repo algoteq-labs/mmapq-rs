@@ -38,6 +38,8 @@ impl IndexedAppender {
             return Err(MmapError::InvalidArgument);
         }
         let len = checked_len(data.len())?;
+        // SAFETY: The live, thread-confined appender retains its runtime; checked_len
+        // bounds the input slice, which C copies before this call returns.
         let n = unsafe {
             ffi::mmapq_indexed_appender_append(self.inner, data.as_ptr() as *const _, len)
         };
@@ -60,6 +62,8 @@ impl IndexedAppender {
             return Err(MmapError::InvalidArgument);
         }
         let len = checked_len(data.len())?;
+        // SAFETY: The live, thread-confined appender retains its runtime; checked_len
+        // bounds the input slice, which C copies before this call returns.
         let n = unsafe {
             ffi::mmapq_indexed_appender_append_uncommitted(
                 self.inner,
@@ -80,6 +84,8 @@ impl IndexedAppender {
     /// Returns the queue index assigned to this message,
     /// or an `MMAPQ_*` error code on failure.
     pub fn commit(&mut self, payload_offset: i64) -> Result<i64, MmapError> {
+        // SAFETY: The live appender is exclusively borrowed. C encodes the numeric offset;
+        // this operation does not dereference it as a Rust pointer.
         let n = unsafe { ffi::mmapq_indexed_appender_commit(self.inner, payload_offset) };
         if n >= 0 {
             Ok(n)
@@ -90,22 +96,26 @@ impl IndexedAppender {
 
     /// The appender's per-lane ID (0–255).
     pub fn id(&self) -> u8 {
+        // SAFETY: The owned handle stays live under this borrow; C only reads the appender ID.
         unsafe { ffi::mmapq_indexed_appender_id(self.inner) }
     }
 
     /// The current (last committed) index.
     pub fn current_index(&self) -> i64 {
+        // SAFETY: The thread-confined handle stays live; this query returns a scalar, not a borrow.
         unsafe { ffi::mmapq_indexed_appender_current_index(self.inner) }
     }
 
     /// The start offset of the appender's payload file.
     pub fn start_offset(&self) -> i64 {
+        // SAFETY: The thread-confined handle stays live; this query returns a scalar, not a borrow.
         unsafe { ffi::mmapq_indexed_appender_start_offset(self.inner) }
     }
 }
 
 impl Drop for IndexedAppender {
     fn drop(&mut self) {
+        // SAFETY: Drop uniquely owns the handle; it is closed once before the runtime field drops.
         unsafe { ffi::mmapq_indexed_appender_close(self.inner) }
     }
 }
