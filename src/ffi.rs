@@ -322,12 +322,6 @@ extern "C" {
         q: *mut IndexedQueue,
         out: *mut *mut IndexedArchiver,
     ) -> i32;
-
-    pub fn mmapq_indexed_queue_region_size(q: *const IndexedQueue) -> i32;
-
-    pub fn mmapq_indexed_queue_max_file_size(q: *const IndexedQueue) -> i64;
-
-    pub fn mmapq_indexed_queue_start_index(q: *const IndexedQueue) -> i64;
 }
 
 /* ── IndexedAppender ──────────────────────────────────────────────────────── */

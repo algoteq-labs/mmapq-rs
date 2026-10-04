@@ -13,6 +13,17 @@ fn borrowing_contracts() {
     std::fs::create_dir_all(&directory).unwrap();
     let legacy = std::env::var_os("MMAPQ_TEST_LEGACY_BORROWS").is_some();
     let mut cases: Vec<(String, String, Option<&str>, bool)> = Vec::new();
+    for getter in ["region_size", "max_file_size", "start_index"] {
+        cases.push((format!("factory_{getter}"), format!(
+            "fn check(queue: &mmapq::IndexedQueue) {{ let _ = queue.{getter}(); }}"
+        ), Some("E0599"), false));
+        cases.push((format!("factory_ffi_{getter}"), format!(
+            "fn check() {{ let _ = mmapq::ffi::mmapq_indexed_queue_{getter}; }}"
+        ), Some("E0425"), false));
+    }
+    cases.push(("share_factory".into(),
+        "fn require_shared<T: Send + Sync>() {} fn check() { require_shared::<mmapq::IndexedQueue>(); }".into(),
+        None, false));
     for operation in ["read(1)", "read_first()", "read_last()", "entry_status(1)", "last_index()", "start_index()"] {
         cases.push((format!("reader_{}", cases.len()), format!(
             "fn check(reader: &mut mmapq::IndexedReader) {{ let message = reader.read(0).unwrap().unwrap(); let bytes = message.data(); let _ = reader.{operation}; std::hint::black_box(bytes); }}"

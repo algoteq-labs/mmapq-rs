@@ -3,6 +3,12 @@
 Package versions are deliberately unchanged until release preparation.
 These changes break source compatibility, not the queue or export layout.
 
+- `IndexedQueue` remains `Send + Sync` and now owns only factory configuration
+  and runtime handles. Its `region_size()`, `max_file_size()`, and `start_index()`
+  getters and the corresponding `mmapq_indexed_queue_*` C/FFI functions are
+  removed. Use a reader or poller for the live start index. Keep `QueueConfig`
+  creation preferences separately when needed; they are not the authoritative
+  geometry of an existing queue. No replacement public geometry query is added.
 - Declare readers with `let mut reader`. Reads, metadata operations that
   enter C, and transfer source arguments require exclusive borrows.
 - Process `message.data()` before reading again. Explicit `to_vec()` is

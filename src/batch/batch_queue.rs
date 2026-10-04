@@ -157,6 +157,7 @@ impl IndexedBatchQueue {
         }
         Ok(super::batch_archiver::IndexedBatchArchiver {
             inner: ptr,
+            _runtime: self._read_rt.clone(),
             _not_send: PhantomData,
         })
     }

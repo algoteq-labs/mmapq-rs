@@ -33,6 +33,9 @@ use crate::ffi;
 /// Batch queue archiver. Thread-confined (`!Send + !Sync`).
 pub struct IndexedBatchArchiver {
     pub(crate) inner: *mut ffi::IndexedBatchArchiver,
+    /// Keeps the read runtime alive through C teardown, independently of the
+    /// parent queue; None selects synchronous mapping.
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
 
@@ -50,9 +53,8 @@ impl IndexedBatchArchiver {
     ///
     /// **No-op** when `index == current start_index`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
-        // SAFETY: UNRESOLVED: this archiver handle is owned and thread-confined, but its
-        // C runtime pointer is borrowed from the factory and not retained here.
-        // Mapping operations require that runtime to remain alive; see U2 in doc/unsafe-audit.md.
+        // SAFETY: The owned, thread-confined handle is exclusively borrowed.
+        // Its retained read runtime stays alive during lazy initialization and mapping.
         let rc = unsafe {
             ffi::mmapq_indexed_batch_archiver_archive_up_to_index(self.inner, index)
         };
@@ -71,7 +73,7 @@ impl IndexedBatchArchiver {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
         // SAFETY: paths has MAX writable slots; C returns at most MAX owned strdup strings.
-        // UNRESOLVED: lazy initialization also needs the unretained runtime (U2).
+        // The owned handle is thread-confined and retains its read runtime for lazy initialization.
         let count = unsafe {
             ffi::mmapq_indexed_batch_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
         };
@@ -99,7 +101,8 @@ impl IndexedBatchArchiver {
 impl Drop for IndexedBatchArchiver {
     fn drop(&mut self) {
         // SAFETY: Drop owns the handle and calls its matching destructor once.
-        // UNRESOLVED: closing async regions also requires the unretained runtime (U2).
+        // The runtime field drops only after this method returns, keeping it alive
+        // while C closes the archiver and its asynchronous regions.
         unsafe { ffi::mmapq_indexed_batch_archiver_close(self.inner) }
     }
 }

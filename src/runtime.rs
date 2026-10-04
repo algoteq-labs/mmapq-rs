@@ -81,18 +81,9 @@ impl Runtime {
         if rc != 0 {
             return Err(map_rc(rc));
         }
-        let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
-        // SAFETY: The getter returned a live counted handle and cloned is writable.
-        // This extra clone is memory-valid but leaks the original reference on success;
-        // see R1 in doc/unsafe-audit.md.
-        let rc = unsafe { ffi::mmapq_runtime_clone(ptr, &mut cloned) };
-        if rc != 0 {
-            // SAFETY: The failed clone did not acquire another reference; release the counted
-            // reference acquired by the singleton getter.
-            unsafe { ffi::mmapq_runtime_destroy(ptr) };
-            return Err(map_rc(rc));
-        }
-        Ok(Runtime { inner: cloned })
+        // Adopt the getter's caller-owned reference; Drop releases it once.
+        // The registry retains its own independent reference.
+        Ok(Runtime { inner: ptr })
     }
 
     /// Get or create the singleton metrics-processor Runtime.
@@ -107,18 +98,9 @@ impl Runtime {
         if rc != 0 {
             return Err(map_rc(rc));
         }
-        let mut cloned: *mut ffi::Runtime = std::ptr::null_mut();
-        // SAFETY: The getter returned a live counted handle and cloned is writable.
-        // This extra clone is memory-valid but leaks the original reference on success;
-        // see R1 in doc/unsafe-audit.md.
-        let rc = unsafe { ffi::mmapq_runtime_clone(ptr, &mut cloned) };
-        if rc != 0 {
-            // SAFETY: The failed clone did not acquire another reference; release the counted
-            // reference acquired by the singleton getter.
-            unsafe { ffi::mmapq_runtime_destroy(ptr) };
-            return Err(map_rc(rc));
-        }
-        Ok(Runtime { inner: cloned })
+        // Adopt the getter's caller-owned reference; Drop releases it once.
+        // The registry retains its own independent reference.
+        Ok(Runtime { inner: ptr })
     }
 
     /// Pin the background thread of this Runtime to the given CPU core.

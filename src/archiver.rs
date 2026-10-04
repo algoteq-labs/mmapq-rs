@@ -30,6 +30,9 @@ use crate::ffi;
 /// Thread-confined (`!Send + !Sync`). One per archiver thread.
 pub struct IndexedArchiver {
     pub(crate) inner: *mut ffi::IndexedArchiver,
+    /// Keeps the read runtime alive through C teardown, independently of the
+    /// parent queue; None selects synchronous mapping.
+    pub(crate) _runtime: Option<crate::runtime::Runtime>,
     pub(crate) _not_send: PhantomData<*mut ()>,
 }
 
@@ -51,9 +54,8 @@ impl IndexedArchiver {
     ///
     /// The backing files can be listed via `archivable_files()`.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
-        // SAFETY: UNRESOLVED: this archiver handle is owned and thread-confined, but its
-        // C runtime pointer is borrowed from the factory and not retained here.
-        // Mapping operations require that runtime to remain alive; see U2 in doc/unsafe-audit.md.
+        // SAFETY: The owned, thread-confined handle is exclusively borrowed.
+        // Its retained read runtime stays alive during lazy initialization and mapping.
         let rc = unsafe {
             ffi::mmapq_indexed_archiver_archive_up_to_index(self.inner, index)
         };
@@ -72,7 +74,7 @@ impl IndexedArchiver {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
         // SAFETY: paths has MAX writable slots; C returns at most MAX owned strdup strings.
-        // UNRESOLVED: lazy initialization also needs the unretained runtime (U2).
+        // The owned handle is thread-confined and retains its read runtime for lazy initialization.
         let count = unsafe {
             ffi::mmapq_indexed_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
         };
@@ -96,7 +98,7 @@ impl IndexedArchiver {
     pub fn print_summary(&self) -> String {
         let mut buf = [0i8; 4096];
         // SAFETY: buf supplies the full advertised writable capacity to snprintf-based C output.
-        // UNRESOLVED: the archiver's runtime lifetime is not retained (U2).
+        // The owned handle is thread-confined and retains its read runtime for lazy initialization.
         let n = unsafe { ffi::mmapq_indexed_archiver_print_summary(self.inner, buf.as_mut_ptr(), 4096) };
         if n > 0 {
             // SAFETY: C writes at most buf.len() bytes and NUL-terminates via snprintf.
@@ -114,7 +116,7 @@ impl IndexedArchiver {
     pub fn start_offset(&self, appender_id: u8) -> Result<Option<i64>, MmapError> {
         let mut offset: i64 = 0;
         // SAFETY: offset is a writable local and the archiver is thread-confined.
-        // UNRESOLVED: C lazy initialization can use its unretained runtime (U2).
+        // The owned handle retains its read runtime during C lazy initialization.
         let ok = unsafe {
             ffi::mmapq_indexed_archiver_start_offset(self.inner, appender_id, &mut offset as *mut i64)
         };
@@ -129,7 +131,8 @@ impl IndexedArchiver {
 impl Drop for IndexedArchiver {
     fn drop(&mut self) {
         // SAFETY: Drop owns the handle and calls its matching destructor once.
-        // UNRESOLVED: closing async regions also requires the unretained runtime (U2).
+        // The runtime field drops only after this method returns, keeping it alive
+        // while C closes the archiver and its asynchronous regions.
         unsafe { ffi::mmapq_indexed_archiver_close(self.inner) }
     }
 }

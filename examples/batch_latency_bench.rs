@@ -48,10 +48,12 @@ fn monotonic_nanos() -> u64 {
 
 const SHUTDOWN_SEQ: u32 = 0;
 
-#[repr(packed)]
-struct LatencyHeader {
-    instance_id: u16,
-    sequence: u32,
+const LATENCY_HEADER_SIZE: usize = 6;
+
+fn write_latency_header(buffer: &mut [u8], instance_id: u16, sequence: u32) {
+    let buffer = &mut buffer[..LATENCY_HEADER_SIZE];
+    buffer[..2].copy_from_slice(&instance_id.to_be_bytes());
+    buffer[2..LATENCY_HEADER_SIZE].copy_from_slice(&sequence.to_be_bytes());
 }
 
 struct BatchLatencyProbe {
@@ -67,6 +69,7 @@ struct BatchLatencyProbe {
 
 impl BatchLatencyProbe {
     fn create(instance_id: u16, msg_size: usize, dir: &str, write_rt: Option<&Runtime>, read_rt: Option<&Runtime>) -> Self {
+        assert!(msg_size >= LATENCY_HEADER_SIZE, "msg_size must be at least 6 bytes");
         let req_cfg = QueueConfig::new(dir, "request");
         let req_cfg = match write_rt { Some(rt) => req_cfg.write_runtime(rt), None => req_cfg };
         let req_cfg = match read_rt { Some(rt) => req_cfg.read_runtime(rt), None => req_cfg };
@@ -96,12 +99,7 @@ impl BatchLatencyProbe {
         self.response_received.store(false, Ordering::Relaxed);
         self.current_seq += 1;
 
-        // SAFETY: UNRESOLVED: LatencyHeader is packed (alignment 1) and the buffer is
-        // exclusively borrowed, but msg_size is not checked to cover its six bytes.
-        // Inputs below six bytes violate this reference's bounds (U3 in doc/unsafe-audit.md).
-        let hdr = unsafe { &mut *(self.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
-        hdr.instance_id = self.instance_id.to_be();
-        hdr.sequence = self.current_seq.to_be();
+        write_latency_header(&mut self.msg_buffer, self.instance_id, self.current_seq);
 
         let start = monotonic_nanos();
 
@@ -227,6 +225,10 @@ fn main() {
     let iterations: i32 = pos.get(0).and_then(|s| s.parse().ok()).unwrap_or(100_000);
     let warmup: i32 = pos.get(1).and_then(|s| s.parse().ok()).unwrap_or(10_000);
     let msg_size: usize = pos.get(2).and_then(|s| s.parse().ok()).unwrap_or(64);
+    if msg_size < LATENCY_HEADER_SIZE {
+        eprintln!("msg_size must be at least 6 bytes (got {msg_size})");
+        std::process::exit(1);
+    }
     let client_cpu: i32 = pos.get(3).and_then(|s| s.parse().ok()).unwrap_or(-1);
     let server_cpu: i32 = pos.get(4).and_then(|s| s.parse().ok()).unwrap_or(-1);
     let mapper_cpu: i32 = pos.get(5).and_then(|s| s.parse().ok()).unwrap_or(-1);
@@ -307,11 +309,7 @@ fn send_shutdown(probe: &mut BatchLatencyProbe) {
     let saved_seq = probe.current_seq;
     probe.current_seq = SHUTDOWN_SEQ;
 
-    // SAFETY: UNRESOLVED: packed alignment is sufficient, but this shutdown write
-    // also requires a six-byte buffer. CLI msg_size has no lower bound; see U3.
-    let hdr = unsafe { &mut *(probe.msg_buffer.as_mut_ptr() as *mut LatencyHeader) };
-    hdr.instance_id = probe.instance_id.to_be();
-    hdr.sequence = SHUTDOWN_SEQ.to_be();
+    write_latency_header(&mut probe.msg_buffer, probe.instance_id, SHUTDOWN_SEQ);
 
     let mut batch = probe.request_appender.start_batch().expect("shutdown start batch");
     batch.append(&probe.msg_buffer).expect("shutdown append");
@@ -390,4 +388,46 @@ fn internal_server(dir: &str, write_rt: Option<Runtime>, read_rt: Option<Runtime
     drop(poller);
     drop(q_req);
     drop(q_res);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn encodes_request_and_shutdown_without_changing_payload() {
+        for size in [6, 64] {
+            let mut buffer = vec![0xa5; size];
+            write_latency_header(&mut buffer, 0x1234, 0x56789abc);
+            assert_eq!(&buffer[..6], &[0x12, 0x34, 0x56, 0x78, 0x9a, 0xbc]);
+            assert!(buffer[6..].iter().all(|&byte| byte == 0xa5));
+            write_latency_header(&mut buffer, 0x1234, SHUTDOWN_SEQ);
+            assert_eq!(&buffer[..6], &[0x12, 0x34, 0, 0, 0, 0]);
+            assert!(buffer[6..].iter().all(|&byte| byte == 0xa5));
+        }
+    }
+
+    #[test]
+    fn rejects_short_message_before_queue_creation() {
+        for size in 0..6 {
+            let dir = std::env::temp_dir().join(format!(
+                "mmapq-BatchLatencyProbe-short-{}-{size}", std::process::id()
+            ));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            // Construction alone reproduces missing validation without executing
+            // the out-of-bounds header writes in the unfixed implementation.
+            let result = std::panic::catch_unwind(|| {
+                BatchLatencyProbe::create(1, size, dir.to_str().unwrap(), None, None)
+            });
+            let empty = std::fs::read_dir(&dir).unwrap().next().is_none();
+            std::fs::remove_dir_all(&dir).unwrap();
+            assert!(result.is_err(), "size {size} was accepted");
+            let panic = result.err().unwrap();
+            let message = panic.downcast_ref::<String>().map(String::as_str)
+                .or_else(|| panic.downcast_ref::<&str>().copied()).unwrap_or("");
+            assert!(message.contains("msg_size must be at least 6 bytes"), "{message}");
+            assert!(empty, "invalid size created queue files");
+        }
+    }
 }

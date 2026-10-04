@@ -1,13 +1,8 @@
 //! Queue factory — creates appenders, pollers, readers, and archivers.
 //!
-//! `IndexedQueue` is a thin config holder that delegates participant creation
-//! to the C library. All factory methods are re-entrant, making the queue
-//! independent of one another. Metadata getters have the unresolved Sync issue
-//! noted below. Only `close()` (called via
-//! `Drop`) requires exclusive access.
-//!
-//! Safety audit: metadata getters still initialize a C cache lazily;
-//! the Sync justification for those getters is unresolved (doc/unsafe-audit.md).
+//! `IndexedQueue` holds immutable creation preferences and runtime handles.
+//! Shared factory calls create independent participants, each owning its metadata
+//! and mapping state. Only Drop requires exclusive access.
 
 use std::ffi::CString;
 use std::marker::PhantomData;
@@ -18,14 +13,9 @@ use crate::runtime::Runtime;
 
 /// A factory for creating queue participants (appenders, pollers, readers).
 ///
-/// `IndexedQueue` currently implements `Send + Sync`, but the Sync contract
-/// is not established for metadata getters (see below).
-/// Participant creation is re-entrant. Only `close()` (called via `Drop`)
-/// requires exclusive access, which Rust's borrow checker enforces via
-/// `&mut self`.
-///
-/// Metadata getters currently have an unresolved lazy-initialization race
-/// when called concurrently; see doc/unsafe-audit.md.
+/// `IndexedQueue` is Send + Sync. Shared methods read immutable configuration
+/// and create thread-confined participants. The factory holds no metadata mapping.
+/// Drop has exclusive ownership, so closing cannot overlap a safe factory call.
 pub struct IndexedQueue {
     /* field order matters: `inner` is declared first so Drop closes the
        queue while `_write_rt`/`_read_rt` still hold the C runtimes alive. */
@@ -40,9 +30,9 @@ pub struct IndexedQueue {
 // SAFETY: Moving the factory transfers sole ownership of its C handle. Participant
 // handles own their own state, and retained Runtime handles are Send + Sync.
 unsafe impl Send for IndexedQueue {}
-// SAFETY: UNRESOLVED: metadata getters lazily write q->queue_meta without locking.
-// Construction does not eagerly initialize it despite the old documentation.
-// Concurrent shared getters can race; see doc/unsafe-audit.md (U1).
+// SAFETY: Shared methods read immutable C factory configuration and allocate
+// independent participants. The factory has no lazy metadata cache; its closed
+// flag is changed only by Drop, which cannot overlap a live Rust borrow.
 unsafe impl Sync for IndexedQueue {}
 
 impl IndexedQueue {
@@ -195,29 +185,9 @@ impl IndexedQueue {
         }
         Ok(super::archiver::IndexedArchiver {
             inner: ptr,
+            _runtime: self._read_rt.clone(),
             _not_send: PhantomData,
         })
-    }
-
-    /// The configured region size in bytes (typically 4 MB).
-    pub fn region_size(&self) -> i32 {
-        // SAFETY: UNRESOLVED: the handle is live, but C lazily writes queue_meta.
-        // &self plus Sync does not exclude concurrent initialization; see U1 in doc/unsafe-audit.md.
-        unsafe { ffi::mmapq_indexed_queue_region_size(self.inner) }
-    }
-
-    /// The maximum payload file size in bytes (typically 1 GB).
-    pub fn max_file_size(&self) -> i64 {
-        // SAFETY: UNRESOLVED: the handle is live, but the C metadata cache is unsynchronized;
-        // this shared getter participates in U1 in doc/unsafe-audit.md.
-        unsafe { ffi::mmapq_indexed_queue_max_file_size(self.inner) }
-    }
-
-    /// The current start index (0 for non-archivable queues).
-    pub fn start_index(&self) -> i64 {
-        // SAFETY: UNRESOLVED: atomic on-disk start_index does not protect lazy queue_meta
-        // pointer initialization; see U1 in doc/unsafe-audit.md.
-        unsafe { ffi::mmapq_indexed_queue_start_index(self.inner) }
     }
 
     #[allow(dead_code)]
