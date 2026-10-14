@@ -1,21 +1,29 @@
 //! Queue archiver — advances the start index and manages file lifecycle.
 //!
 //! An `IndexedArchiver` is created from an archivable queue. It can:
-//! - **Forward archiving** (`index > current start_index`): walk headers
-//!   backwards from `index - 1` to the current start index, record each
-//!   appender's last committed payload position, advance past the committed
-//!   message to find the next write offset, write that offset to
-//!   appender_meta, and commit the new start_index atomically in queue meta.
+//! - **Forward archiving** (`index > current start_index`): read and validate
+//!   every header in the archived range, compute each appender's boundary as
+//!   the end of the archived entry with the maximum payload position (commit
+//!   order is not write order under resequencing), publish the boundary,
+//!   commit the new start_index atomically in queue meta, then make one pass
+//!   over the live headers, lowering the boundary below any live payload
+//!   that sits under it.
 //! - **Backward / undo archiving** (`index < current start_index`): walk
 //!   headers forward from `index` to the current start index. Validate that
 //!   all header and payload files covering that range still exist before
-//!   modifying anything. Record the first payload position per appender,
-//!   write to appender_meta, commit the lower start_index.
+//!   modifying anything. Lower each appender's boundary to the lowest
+//!   restored payload position — undo never raises it.
 //! - **No-op** when `index == current start_index`.
 //!
+//! Archiving is serialised per queue on `archive.lock` (flock); a listing
+//! never observes an archive in progress.
+//!
 //! The archiver does **not** delete files — `archivable_files()` returns the
-//! list of files fully covered by the archive boundary (safe to delete, move,
-//! or compress), but the caller decides what to do with them.
+//! list of files fully covered by the archive boundary at the time of the
+//! call, but the caller decides what to do with them. A listing is a
+//! snapshot, not permission: mark the listed files, wait, then delete only
+//! files that a fresh listing taken after the wait still names (see
+//! `doc/archiving-design.md`).
 //!
 //! Thread-confined (`!Send + !Sync`). One per archiver thread.
 
@@ -111,8 +119,15 @@ impl IndexedArchiver {
         }
     }
 
-    /// Return the start offset for a given appender, or `None` if the
+    /// Return the payload boundary for a given appender, or `None` if the
     /// appender has not written any messages.
+    ///
+    /// `start_offset` is the per-appender deletion boundary: payload files
+    /// wholly below it may be reclaimed. It is the anchor a joining appender
+    /// with no live entry walks forward from — not a write position.
+    /// Files listed by `archivable_files` are a snapshot, not permission:
+    /// mark, wait, and re-validate with a fresh listing before deleting
+    /// (see `doc/archiving-design.md`).
     pub fn start_offset(&self, appender_id: u8) -> Result<Option<i64>, MmapError> {
         let mut offset: i64 = 0;
         // SAFETY: offset is a writable local and the archiver is thread-confined.

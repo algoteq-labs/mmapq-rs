@@ -106,7 +106,11 @@ impl IndexedAppender {
         unsafe { ffi::mmapq_indexed_appender_current_index(self.inner) }
     }
 
-    /// The start offset of the appender's payload file.
+    /// The appender's payload boundary (`start_offset`): payload files
+    /// wholly below it may be reclaimed. It is a deletion boundary and a
+    /// join anchor, not a write position. A payload appended uncommitted
+    /// below this boundary can no longer be committed (`commit` returns
+    /// `MmapError::InvalidArgument`).
     pub fn start_offset(&self) -> i64 {
         // SAFETY: The thread-confined handle stays live; this query returns a scalar, not a borrow.
         unsafe { ffi::mmapq_indexed_appender_start_offset(self.inner) }
