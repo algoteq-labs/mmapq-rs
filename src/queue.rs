@@ -40,8 +40,8 @@ impl IndexedQueue {
     ///
     /// The queue directory and metadata are created lazily (on first
     /// participant creation) if they do not exist — matching C semantics.
-    /// Metadata is not pre-opened here; concurrent metadata getters have the
-    /// unresolved race recorded in doc/unsafe-audit.md.
+    /// Metadata is not pre-opened here; the metadata getters that raced with
+    /// lazy initialization were removed (doc/unsafe-audit.md U1).
     pub fn create(mut config: QueueConfig) -> Result<Self, MmapError> {
         let dir = CString::new(config.directory.as_str())
             .map_err(|_| MmapError::Internal("directory contains null byte".into()))?;
