@@ -29,7 +29,10 @@ pub enum MmapError {
     Corrupt(Cow<'static, str>),
 
     /// Schema version or queue type mismatch on open (wrong queue kind,
-    /// or file from an incompatible version).
+    /// or file from an incompatible version), or on-disk geometry not
+    /// supported by this build/host (a pre-CAND-38-rule geometry, or a
+    /// page-size mismatch: a queue is portable only to hosts whose page
+    /// size divides its region_size).
     SchemaMismatch,
 
     /// I/O error — metadata file write failure (rw_meta_open failed).

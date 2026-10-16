@@ -275,7 +275,10 @@ impl QueueConfig {
         &self.queue_name
     }
 
-    /// Size in bytes of each mapped region (must be a power of two).
+    /// Size in bytes of each mapped region. Must be a power of two and a
+    /// multiple of 32 KB (one transposed header block), and a multiple of
+    /// the OS page size — header-file reclaim relies on whole blocks per
+    /// file, and region mmap offsets must stay page-aligned (CAND-38 rule).
     pub fn region_size(mut self, bytes: i32) -> Self {
         self.region_size = bytes;
         self
@@ -308,7 +311,8 @@ impl QueueConfig {
         self.regions_to_map_ahead
     }
 
-    /// Maximum payload file size in bytes (must be a multiple of region_size).
+    /// Maximum payload file size in bytes (must be a multiple of
+    /// region_size, and therefore of the 32 KB header block).
     pub fn max_file_size(mut self, bytes: i64) -> Self {
         self.max_file_size = bytes;
         self

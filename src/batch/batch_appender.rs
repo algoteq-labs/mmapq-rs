@@ -228,8 +228,8 @@ mod tests {
         std::fs::create_dir_all(&dir).expect("failed to create test base directory");
         let q = IndexedBatchQueue::create(
             QueueConfig::new(dir.to_str().unwrap(), "q")
-                .region_size(4096)
-                .ring_size(16) // ring_size=4 at region_size=4096 fails geometry check (mmapq_min_ring_size(4096) = 16)
+                .region_size(32768)
+                .ring_size(16) // CAND-38: 32768 is the smallest legal region (one 32 KB header block)
                 .write_runtime(&rt)
                 .read_runtime(&rt),
         )
@@ -240,7 +240,7 @@ mod tests {
         let ok = w.append(b"small").unwrap();
         assert_eq!(ok, 0);
 
-        let big = vec![0u8; 4096];
+        let big = vec![0u8; 32768];
         let err = w.append(&big).unwrap_err();
         assert!(matches!(err, MmapError::InvalidArgument));
 

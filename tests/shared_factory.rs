@@ -11,7 +11,7 @@ fn shared_factory_participants_discover_late_metadata() {
         std::fs::create_dir_all(&directory).unwrap();
         let runtime = asynchronous.then(|| Runtime::new(RuntimeConfig::new()).unwrap());
         let mut config = QueueConfig::new(directory.to_str().unwrap(), "queue")
-            .region_size(4096).ring_size(16).max_file_size(4096 * 64)
+            .region_size(32768).ring_size(16).max_file_size(32768 * 8)
             .start_index(17);
         if let Some(runtime) = &runtime {
             config = config.write_runtime(runtime).read_runtime(runtime);

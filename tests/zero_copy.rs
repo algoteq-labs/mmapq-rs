@@ -64,7 +64,7 @@ fn region_reuse_and_bulk_copy_preserve_borrowed_payloads() {
         let runtime = asynchronous.then(|| Runtime::new(RuntimeConfig::new()).unwrap());
         let config = |name| {
             let config = QueueConfig::new(directory.to_str().unwrap(), name)
-                .region_size(4096).ring_size(16).max_file_size(4096 * 128);
+                .region_size(32768).ring_size(16).max_file_size(32768 * 16);
             if let Some(runtime) = &runtime {
                 config.write_runtime(runtime).read_runtime(runtime)
             } else { config }
