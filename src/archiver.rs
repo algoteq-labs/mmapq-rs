@@ -78,6 +78,8 @@ impl IndexedArchiver {
     ///
     /// Only returns paths to files that actually exist on disk. The caller
     /// is responsible for any file management (delete, compress, etc.).
+    /// The listing can fail with `MapTimedOut` if a live-header read times
+    /// out during the boundary cap scan (CAND-35).
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
@@ -86,7 +88,10 @@ impl IndexedArchiver {
         let count = unsafe {
             ffi::mmapq_indexed_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
         };
-        if count <= 0 {
+        if count < 0 {
+            return Err(map_rc(count));
+        }
+        if count == 0 {
             return Ok(Vec::new());
         }
         let mut result = Vec::with_capacity(count as usize);
