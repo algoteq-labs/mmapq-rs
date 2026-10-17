@@ -235,7 +235,7 @@ extern "C" {
 
     pub fn mmapq_runtime_clone(rt: *mut Runtime, out: *mut *mut Runtime) -> c_int;
 
-    pub fn mmapq_runtime_close(rt: *mut Runtime);
+    pub fn mmapq_runtime_close(rt: *mut Runtime) -> c_int;
 
     pub fn mmapq_runtime_register(rt: *mut Runtime, exec: *mut Executable) -> c_int;
 
