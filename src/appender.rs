@@ -14,6 +14,7 @@ use std::marker::PhantomData;
 
 use crate::error::{checked_len, map_rc, MmapError};
 use crate::ffi;
+use crate::uncommitted::UncommittedIter;
 
 /// A queue appender — write and commit messages.
 ///
@@ -92,6 +93,38 @@ impl IndexedAppender {
         } else {
             Err(map_rc(n as i32))
         }
+    }
+
+    /// Iterate this appender's uncommitted payloads (snapshot at call time —
+    /// appends/commits after the call are invisible).
+    ///
+    /// Yields `(offset, payload)` pairs from the archive line onward; commit
+    /// a found offset with `commit()` — any subset, any order, same session
+    /// or after rejoin. Not committing = skip; an offset archiving has
+    /// overtaken returns `Err(InvalidArgument)`. The `&mut self` borrow
+    /// enforces the no-append-while-iterating rule at compile time.
+    /// Archiving may remove messages the walk has not reached, even after
+    /// an undo. Returns `Err(Corrupt)` for a pre-0.2.0 queue (zero archive
+    /// line — recreate the queue).
+    pub fn uncommitted_iter(&mut self) -> Result<UncommittedIter<'_>, MmapError> {
+        let mut it = std::ptr::null_mut();
+        // SAFETY: The live, thread-confined appender is exclusively borrowed; it is a
+        // writable output local. MMAPQ_PAYLOAD_ITERATOR_NOT_SET for both bounds selects
+        // the full archive-line-to-end walk.
+        let rc = unsafe {
+            ffi::mmapq_indexed_appender_uncommitted_iterator_checked(
+                self.inner,
+                ffi::MMAPQ_PAYLOAD_ITERATOR_NOT_SET,
+                ffi::MMAPQ_PAYLOAD_ITERATOR_NOT_SET,
+                &mut it,
+            )
+        };
+        if rc != 0 {
+            return Err(map_rc(rc));
+        }
+        // The factory returned 0, so `it` is the live appender-owned iterator;
+        // the returned guard carries this exclusive borrow for its lifetime.
+        Ok(UncommittedIter::new(it))
     }
 
     /// The appender's per-lane ID (0–255).

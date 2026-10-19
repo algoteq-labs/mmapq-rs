@@ -8,8 +8,10 @@
 //!
 //! 1. `start_batch()` → returns a `BatchWriter<'_>`
 //! 2. `BatchWriter::append(data)` — add messages
-//! 3. `BatchWriter::commit()` — finalises and commits the batch (consumes writer)
-//! 4. Dropping `BatchWriter` without `commit()` auto-rolls back
+//! 3. `BatchWriter::commit()` — publishes the batch (consumes writer), or
+//!    `BatchWriter::complete_uncommitted()` — stages it for a later
+//!    `IndexedBatchAppender::commit_batch()` (consumes writer)
+//! 4. Dropping `BatchWriter` without either discards the batch
 
 pub mod batch_queue;
 pub mod batch_appender;
@@ -21,6 +23,8 @@ pub mod batch_archiver;
 /// Wraps the C `BatchPayloadIterator` to provide safe iteration over
 /// messages in a single batch. Yields `(&[u8], u8)` pairs.
 pub mod batch_iter;
+/// Uncommitted-batch iterator (`UncommittedBatches`) — the recovery surface.
+pub mod uncommitted;
 
 pub use batch_queue::IndexedBatchQueue;
 pub use batch_appender::{IndexedBatchAppender, BatchWriter};
@@ -28,3 +32,4 @@ pub use batch_poller::IndexedBatchPoller;
 pub use batch_reader::{IndexedBatchReader, BatchMessage};
 pub use batch_archiver::IndexedBatchArchiver;
 pub use batch_iter::BatchMessageIter;
+pub use uncommitted::UncommittedBatches;

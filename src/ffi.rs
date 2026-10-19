@@ -45,6 +45,7 @@ pub struct BatchPayloadIterator {
 }
 pub enum PayloadIterator {}
 pub enum UncommittedPayloadIterator {}
+pub enum UncommittedBatchIterator {}
 pub enum ExecList {}
 pub enum QueueRegionAccessor {}
 
@@ -87,6 +88,10 @@ pub const QUEUE_TRANSFER_REBASE: c_int = 0;
 pub const QUEUE_TRANSFER_PRESERVE: c_int = 1;
 
 pub const APPENDER_ID_AUTO: i32 = -1;
+
+/// Offset sentinel for the checked uncommitted-iterator factory
+/// (indexed_appender.h: `MMAPQ_PAYLOAD_ITERATOR_NOT_SET`).
+pub const MMAPQ_PAYLOAD_ITERATOR_NOT_SET: i64 = -1;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -385,11 +390,19 @@ extern "C" {
         end_offset: i64,
     ) -> *mut PayloadIterator;
 
-    pub fn mmapq_indexed_appender_uncommitted_iterator(
+    pub fn mmapq_indexed_appender_uncommitted_iterator_checked(
         a: *mut IndexedAppender,
         start_offset: i64,
         end_offset: i64,
-    ) -> *mut UncommittedPayloadIterator;
+        out: *mut *mut UncommittedPayloadIterator,
+    ) -> i32;
+
+    pub fn mmapq_uncommitted_iterator_next(
+        it: *mut UncommittedPayloadIterator,
+        data: *mut *const c_void,
+        length: *mut i32,
+        offset: *mut i64,
+    ) -> i32;
 }
 
 /* ── IndexedPoller ────────────────────────────────────────────────────────── */
@@ -594,10 +607,22 @@ extern "C" {
         batch_offset: i64,
     ) -> i64;
 
-    pub fn mmapq_indexed_batch_appender_discard_batch(
+    pub fn mmapq_indexed_batch_appender_uncommitted_batches_checked(
         a: *mut IndexedBatchAppender,
-        batch_offset: i64,
-    );
+        out: *mut *mut UncommittedBatchIterator,
+    ) -> i32;
+
+    pub fn mmapq_uncommitted_batch_next(
+        it: *mut UncommittedBatchIterator,
+        batch_offset: *mut i64,
+        message_count: *mut i32,
+        msgs: *mut *mut BatchPayloadIterator,
+    ) -> i32;
+
+    pub fn mmapq_indexed_batch_appender_join_completed_open_batch(
+        a: *mut IndexedBatchAppender,
+        offset: *mut i64,
+    ) -> i32;
 
     pub fn mmapq_indexed_batch_appender_append_and_commit(
         a: *mut IndexedBatchAppender,
@@ -606,6 +631,10 @@ extern "C" {
     ) -> i64;
 
     pub fn mmapq_mutable_batch_complete(b: *mut MutableBatch) -> i64;
+
+    pub fn mmapq_mutable_batch_complete_uncommitted(b: *mut MutableBatch) -> i64;
+
+    pub fn mmapq_mutable_batch_discard(b: *mut MutableBatch) -> i32;
 
     pub fn mmapq_mutable_batch_append(
         b: *mut MutableBatch,

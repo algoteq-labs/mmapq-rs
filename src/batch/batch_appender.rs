@@ -1,10 +1,12 @@
 //! Batch appender — writes batches of messages and commits them atomically.
 //!
 //! The `BatchWriter` RAII guard enforces correct lifecycle at compile time:
-//! `commit()` consumes `self`, drop without commit rolls back.
+//! `commit()` publishes and consumes `self`, `complete_uncommitted()` stages
+//! for a later `commit_batch()`, drop without either discards.
 
 use std::marker::PhantomData;
 
+use crate::batch::uncommitted::UncommittedBatches;
 use crate::batch::BatchMessageIter;
 use crate::error::{checked_len, map_rc, MmapError};
 use crate::ffi;
@@ -23,9 +25,10 @@ impl IndexedBatchAppender {
     ///
     /// Returns a `BatchWriter` that enforces correct lifecycle:
     /// - `append()` / `append_reserved()` add messages.
-    /// - `commit()` finalises and consumes the writer.
-    /// - Dropping without `commit()` auto-rolls back via
-    ///   `mmapq_indexed_batch_appender_discard_batch()`.
+    /// - `commit()` publishes the batch and consumes the writer.
+    /// - `complete_uncommitted()` stages the batch for a later
+    ///   `commit_batch()` and consumes the writer.
+    /// - Dropping without either discards via `mmapq_mutable_batch_discard()`.
     #[inline]
     pub fn start_batch(&mut self) -> Result<BatchWriter<'_>, MmapError> {
         let mut batch = std::ptr::null_mut();
@@ -36,7 +39,6 @@ impl IndexedBatchAppender {
             return Err(map_rc(result));
         }
         Ok(BatchWriter {
-            appender: self.inner,
             batch,
             committed: false,
             _phantom: PhantomData,
@@ -49,8 +51,73 @@ impl IndexedBatchAppender {
         unsafe { ffi::mmapq_indexed_batch_appender_id(self.inner) }
     }
 
-    /// Convenience: start a batch, append one message, complete, and commit
-    /// in a single call. Avoids four separate FFI crossings.
+    /// Commit a staged batch, making it visible to pollers and readers.
+    ///
+    /// `batch_offset` is the value returned by
+    /// `BatchWriter::complete_uncommitted()`, or an offset yielded by
+    /// `uncommitted_batches()` — any subset, any order, same session or
+    /// after rejoin. Returns the zero-based index of the committed batch,
+    /// or `Err(InvalidArgument)` if the offset is not outstanding (never
+    /// staged by this incarnation, already committed, a discarded batch,
+    /// above the last started batch) or has been overtaken by archiving.
+    pub fn commit_batch(&mut self, batch_offset: i64) -> Result<i64, MmapError> {
+        // SAFETY: The live appender is exclusively borrowed. C encodes the numeric
+        // offset; this operation does not dereference it as a Rust pointer.
+        let idx = unsafe { ffi::mmapq_indexed_batch_appender_commit_batch(self.inner, batch_offset) };
+        if idx >= 0 {
+            Ok(idx)
+        } else {
+            Err(map_rc(idx as i32))
+        }
+    }
+
+    /// Iterate this appender's uncommitted (staged or discarded) batches —
+    /// snapshot at call time, from the archive line to the frozen end of
+    /// stream.
+    ///
+    /// Yields `(batch_offset, messages)` pairs; commit a found offset with
+    /// `commit_batch()`. Discarded batches reappear after a restart —
+    /// recovery code decides. The `&mut self` borrow enforces the
+    /// no-append-while-iterating rule at compile time. Archiving may remove
+    /// batches the walk has not reached, even after an undo. Returns
+    /// `Err(Corrupt)` for a pre-0.2.0 queue (zero archive line — recreate
+    /// the queue).
+    pub fn uncommitted_batches(&mut self) -> Result<UncommittedBatches<'_>, MmapError> {
+        let mut it = std::ptr::null_mut();
+        // SAFETY: The live, thread-confined appender is exclusively borrowed; it is a
+        // writable output local.
+        let rc = unsafe { ffi::mmapq_indexed_batch_appender_uncommitted_batches_checked(self.inner, &mut it) };
+        if rc != 0 {
+            return Err(map_rc(rc));
+        }
+        // The factory returned 0, so `it` is the live appender-owned iterator; the
+        // returned guard carries this exclusive borrow for its lifetime. The lane ID
+        // labels the yielded messages (all batches walked are this lane's payloads).
+        let appender_id = self.id();
+        Ok(UncommittedBatches::new(it, appender_id))
+    }
+
+    /// Report whether this appender's join completed a trailing open batch
+    /// to staged (at the rejoin, or by start_batch's orphan recovery).
+    ///
+    /// Returns `Some(offset)` once per join-completion event (read-and-clear),
+    /// `None` otherwise. The batch was completed by the queue, not the app:
+    /// it may lack messages the app intended; the last counted message may
+    /// have partial content.
+    pub fn join_completed_open_batch(&mut self) -> Option<i64> {
+        let mut offset = 0;
+        // SAFETY: The live, thread-confined appender is exclusively borrowed; offset is
+        // a writable output local. C documents the return as 1 (event) or 0 (none).
+        let rc = unsafe { ffi::mmapq_indexed_batch_appender_join_completed_open_batch(self.inner, &mut offset) };
+        if rc == 1 {
+            Some(offset)
+        } else {
+            None
+        }
+    }
+
+    /// Convenience: start a batch, append one message, and publish
+    /// in a single call. Avoids three separate FFI crossings.
     ///
     /// Equivalent to:
     ///   let mut b = appender.start_batch()?;
@@ -88,12 +155,16 @@ impl Drop for IndexedBatchAppender {
 /// An in-progress batch write session.
 ///
 /// - `append()` / `append_reserved()` add messages.
-/// - `commit()` finalises the batch and consumes `self`, preventing
+/// - `commit()` publishes the batch and consumes `self`, preventing
 ///   double-commit at compile time.
-/// - `Drop` without `commit()` rolls back via `discard_batch()`.
+/// - `complete_uncommitted()` stages the batch without publishing and
+///   consumes `self`.
+/// - `Drop` without either discards via `mmapq_mutable_batch_discard()`
+///   (never complete — that publishes now).
 pub struct BatchWriter<'a> {
-    appender: *mut ffi::IndexedBatchAppender,
     batch: *mut ffi::MutableBatch,
+    /// Set once the C batch handle is consumed (commit or
+    /// complete_uncommitted), suppressing Drop's discard.
     committed: bool,
     _phantom: PhantomData<&'a mut IndexedBatchAppender>,
 }
@@ -177,18 +248,13 @@ impl BatchWriter<'_> {
 
     /// Commit the batch, making it visible to pollers and readers.
     ///
-    /// Calls `mmapq_mutable_batch_complete()` then
-    /// `mmapq_indexed_batch_appender_commit_batch()`. Consumes `self`.
+    /// One call: `mmapq_mutable_batch_complete()` stores the message count
+    /// and publishes the batch header. Consumes `self`. Returns the
+    /// zero-based index of the committed batch.
     pub fn commit(mut self) -> Result<i64, MmapError> {
         // SAFETY: The guard keeps its appender and active batch alive and exclusively borrowed.
         // Completing consumes no Rust references to reserved bytes.
-        let batch_offset = unsafe { ffi::mmapq_mutable_batch_complete(self.batch) };
-        if batch_offset < 0 {
-            return Err(map_rc(batch_offset as i32));
-        }
-        // SAFETY: batch_offset came from successful completion of this same active batch;
-        // self still exclusively borrows its live appender.
-        let idx = unsafe { ffi::mmapq_indexed_batch_appender_commit_batch(self.appender, batch_offset) };
+        let idx = unsafe { ffi::mmapq_mutable_batch_complete(self.batch) };
         if idx >= 0 {
             self.committed = true;
             Ok(idx)
@@ -196,19 +262,33 @@ impl BatchWriter<'_> {
             Err(map_rc(idx as i32))
         }
     }
+
+    /// Finalise the batch WITHOUT publishing it (stage): stores the message
+    /// count and returns the batch offset for a later
+    /// `IndexedBatchAppender::commit_batch()` — same session or after
+    /// rejoin. Consumes `self`.
+    pub fn complete_uncommitted(mut self) -> Result<i64, MmapError> {
+        // SAFETY: The guard keeps its appender and active batch alive and exclusively borrowed.
+        // Completing consumes no Rust references to reserved bytes.
+        let offset = unsafe { ffi::mmapq_mutable_batch_complete_uncommitted(self.batch) };
+        if offset >= 0 {
+            self.committed = true;
+            Ok(offset)
+        } else {
+            Err(map_rc(offset as i32))
+        }
+    }
 }
 
 impl Drop for BatchWriter<'_> {
     fn drop(&mut self) {
         if !self.committed {
-            // SAFETY: An uncommitted guard still exclusively owns its live batch/appender.
+            // SAFETY: An unconsumed guard still exclusively owns its live batch/appender.
             // No reserved slice can remain borrowed when the guard is dropped.
-            let batch_offset = unsafe { ffi::mmapq_mutable_batch_complete(self.batch) };
-            if batch_offset >= 0 {
-                // SAFETY: Completion succeeded for this same appender; discard rolls back the
-                // unpublished batch before the guard releases the appender borrow.
-                unsafe { ffi::mmapq_indexed_batch_appender_discard_batch(self.appender, batch_offset) }
-            }
+            // Discard-only, NEVER complete — complete publishes now. The rc is
+            // ignored per the owner ruling (drop is best-effort rollback; an
+            // already-consumed handle reports EINVAL, which drop cannot act on).
+            unsafe { ffi::mmapq_mutable_batch_discard(self.batch) };
         }
     }
 }

@@ -110,6 +110,49 @@ batch.append(b"event 2")?;
 batch.commit()?;   // consumes `batch`; the batch is now atomically visible
 ```
 
+## Recovery — uncommitted messages and batches
+
+After a restart, messages appended but never committed (and batches staged
+or discarded before a crash) are recoverable by the rejoining lane owner.
+The iterators snapshot at call time; the `&mut` borrow forbids appending
+while iterating — the compiler enforces it. Commit found offsets with
+`commit()` / `commit_batch()` — any subset, any order; skipping is fine.
+Archiving may remove messages the walk has not yielded, and discarded
+batches reappear in recovery — recovery code decides.
+
+```rust
+use mmapq::{IndexedQueue, QueueConfig, Runtime};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all("./data")?;
+    let rt = Runtime::region_mapper()?;
+    let q = IndexedQueue::create(
+        QueueConfig::new("./data", "my_queue")
+            .write_runtime(&rt)
+            .read_runtime(&rt),
+    )?;
+
+    let mut appender = q.create_appender()?;
+    let mut offsets = Vec::new();
+    {
+        let mut it = appender.uncommitted_iter()?;
+        while let Some((offset, data)) = it.next()? {
+            println!("recovered {} bytes at {}", data.len(), offset);
+            offsets.push(offset); // commit below; skipping is also valid
+        }
+    }
+    for offset in offsets {
+        appender.commit(offset)?; // publish each recovered message
+    }
+
+    // Batch lanes: appender.uncommitted_batches() yields
+    // (batch_offset, messages); appender.commit_batch(offset) publishes;
+    // appender.join_completed_open_batch() reports a crash-interrupted batch
+    // the rejoin completed to staged.
+    Ok(())
+}
+```
+
 ## Cross-language and cross-process
 
 The wire format is identical to the C library and to Python (`mmapq-py`),

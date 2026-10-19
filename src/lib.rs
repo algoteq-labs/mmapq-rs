@@ -66,6 +66,7 @@ pub mod types;
 pub mod runtime;
 pub mod queue;
 pub mod appender;
+pub mod uncommitted;
 pub mod poller;
 pub mod reader;
 pub mod archiver;
@@ -79,6 +80,7 @@ pub use types::{
 pub use runtime::{Runtime, RuntimeConfig, IdleStrategy};
 pub use queue::{IndexedQueue, QueueConfig};
 pub use appender::IndexedAppender;
+pub use uncommitted::UncommittedIter;
 pub use poller::IndexedPoller;
 pub use reader::{IndexedReader, Message};
 pub use archiver::IndexedArchiver;
@@ -86,5 +88,5 @@ pub use transfer::*;
 pub use batch::{
     IndexedBatchQueue, IndexedBatchAppender, IndexedBatchPoller,
     IndexedBatchReader, IndexedBatchArchiver, BatchWriter, BatchMessage,
-    BatchMessageIter,
+    BatchMessageIter, UncommittedBatches,
 };
