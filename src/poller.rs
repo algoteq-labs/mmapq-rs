@@ -322,6 +322,76 @@ mod tests {
         assert_eq!(messages, vec!["msg1", "msg2", "msg3"]);
     }
 
+    /// CAND-17(a): a mapping timeout on the poller's header read must
+    /// surface as `Err(MmapError::MapTimedOut)` — never
+    /// `Ok(PollResult::EndOfStream)` — and the cursor must not advance:
+    /// the same message is delivered once the background mapping completes.
+    /// Pin shape: standalone poller with `timeout_ns = 0`
+    /// (audit/repro/INV-24_timeout_as_eos.c).
+    #[test]
+    fn test_poll_header_timeout_is_error_not_eos() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir()
+            .join("mmap-rs-test-poller")
+            .join("test_poll_hdr_timeout");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        {
+            let mut a = q.create_appender().unwrap();
+            a.append(b"hello").unwrap();
+        }
+
+        // Standalone zero-timeout poller via the C factory: the first
+        // header region map times out.
+        let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+        let cname = std::ffi::CString::new("q").unwrap();
+        let mut raw: *mut crate::ffi::IndexedPoller = std::ptr::null_mut();
+        // SAFETY: valid C strings, live runtime, out-pointer written by C.
+        let rc = unsafe {
+            crate::ffi::mmapq_indexed_poller_create(cdir.as_ptr(), cname.as_ptr(), 4, 0, rt.as_ptr(), &mut raw)
+        };
+        assert_eq!(rc, 0);
+        assert!(!raw.is_null());
+        let mut p = IndexedPoller {
+            inner: raw,
+            _runtime: Some(rt.clone()),
+            _not_send: std::marker::PhantomData,
+        };
+
+        let mut delivered: Vec<u8> = Vec::new();
+        let mut result = p.poll(|idx, _aid, data| {
+            assert_eq!(idx, 0);
+            delivered = data.to_vec();
+            NextMove::Advance
+        });
+        assert!(
+            matches!(result, Err(crate::MmapError::MapTimedOut)),
+            "header-read mapping timeout must be MapTimedOut, got {:?}",
+            result
+        );
+        assert!(delivered.is_empty());
+
+        // Cursor never advanced on the timeout: retry (bounded) until the
+        // background mapping completes; the same message then advances.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while matches!(result, Err(crate::MmapError::MapTimedOut)) {
+            assert!(std::time::Instant::now() < deadline, "mapping never completed");
+            result = p.poll(|idx, _aid, data| {
+                assert_eq!(idx, 0);
+                delivered = data.to_vec();
+                NextMove::Advance
+            });
+        }
+        assert!(matches!(result, Ok(PollResult::Advanced)), "got {:?}", result);
+        assert_eq!(delivered, b"hello");
+    }
+
     #[test]
     fn test_poll_handler_stop() {
         let (q, mut p, _rt) = setup("test_poll_stop");

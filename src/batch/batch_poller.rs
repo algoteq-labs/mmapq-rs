@@ -226,6 +226,91 @@ mod tests {
         assert_eq!(result, PollResult::EndOfStream);
     }
 
+    /// CAND-17(a) batch twin of poller::tests::test_poll_header_timeout_is_error_not_eos:
+    /// a mapping timeout on the batch poller's header read must surface as
+    /// `Err(MmapError::MapTimedOut)` — never `Ok(PollResult::EndOfStream)` —
+    /// and the cursor must not advance.
+    #[test]
+    fn test_batch_poll_header_timeout_is_error_not_eos() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir()
+            .join("mmap-rs-test-bpoller")
+            .join("test_bpoll_hdr_timeout");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = IndexedBatchQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        {
+            let mut a = q.create_appender().unwrap();
+            let mut batch = a.start_batch().expect("start batch");
+            batch.append(b"hello").expect("append");
+            batch.commit().expect("commit");
+        }
+
+        // Standalone zero-timeout poller via the C factory: the first
+        // header region map times out.
+        let cdir = std::ffi::CString::new(dir.to_str().unwrap()).unwrap();
+        let cname = std::ffi::CString::new("q").unwrap();
+        let mut raw: *mut crate::ffi::IndexedBatchPoller = std::ptr::null_mut();
+        // SAFETY: valid C strings, live runtime, out-pointer written by C.
+        let rc = unsafe {
+            crate::ffi::mmapq_indexed_batch_poller_create(
+                cdir.as_ptr(),
+                cname.as_ptr(),
+                4,
+                0,
+                rt.as_ptr(),
+                &mut raw,
+            )
+        };
+        assert_eq!(rc, 0);
+        assert!(!raw.is_null());
+        let mut p = super::IndexedBatchPoller {
+            inner: raw,
+            _runtime: Some(rt.clone()),
+            _not_send: std::marker::PhantomData,
+        };
+
+        let mut count = 0i32;
+        let mut first_index = -1i64;
+        let mut result = p.poll(|bi, mut iter| {
+            first_index = bi;
+            while let Some((data, _aid)) = iter.next().expect("batch iteration") {
+                assert_eq!(data, b"hello");
+                count += 1;
+            }
+            NextMove::Advance
+        });
+        assert!(
+            matches!(result, Err(crate::MmapError::MapTimedOut)),
+            "header-read mapping timeout must be MapTimedOut, got {:?}",
+            result
+        );
+        assert_eq!(count, 0);
+
+        // Cursor never advanced on the timeout: retry (bounded) until the
+        // background mapping completes; the same batch then advances.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while matches!(result, Err(crate::MmapError::MapTimedOut)) {
+            assert!(std::time::Instant::now() < deadline, "mapping never completed");
+            result = p.poll(|bi, mut iter| {
+                first_index = bi;
+                while let Some((data, _aid)) = iter.next().expect("batch iteration") {
+                    assert_eq!(data, b"hello");
+                    count += 1;
+                }
+                NextMove::Advance
+            });
+        }
+        assert!(matches!(result, Ok(PollResult::Advanced)), "got {:?}", result);
+        assert_eq!(first_index, 0);
+        assert_eq!(count, 1);
+    }
+
     #[test]
     fn test_batch_poll_one_message() {
         let (q, mut p, _rt) = setup("test_bpoll_one");
