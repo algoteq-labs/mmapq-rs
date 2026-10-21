@@ -260,3 +260,153 @@ fn rejoin_completes_open_batch() {
     drop(msgs);
     assert!(batches.next().unwrap().is_none());
 }
+
+/* ── CAND-51b F-REC-3 wrapper pins ─────────────────────────────────────── */
+
+fn setup_batch_archivable(name: &str) -> (IndexedBatchQueue, Runtime) {
+    let rt = Runtime::region_mapper().unwrap();
+    let dir = std::env::temp_dir().join("mmap-rs-test-recovery").join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("failed to create test base directory");
+    let q = IndexedBatchQueue::create(
+        QueueConfig::new(dir.to_str().unwrap(), "q")
+            .archivable(true)
+            .write_runtime(&rt)
+            .read_runtime(&rt),
+    )
+    .unwrap();
+    (q, rt)
+}
+
+/// Mirrors the C §3.5 overtaken pre-check (test_batch_uncommitted_dg_line_
+/// respected): a staged batch whose offset an archive has overtaken is
+/// rejected with EINVAL — final. (ORPHANED recovery is a C-only pin: the
+/// pre-store fault that creates ORPHANED is unreachable from the wrapper.)
+#[test]
+fn batch_commit_batch_overtaken_is_rejected() {
+    let (q, _rt) = setup_batch_archivable("batch_overtaken_commit");
+    let mut a = q.create_appender().unwrap();
+
+    let off_b1;
+    {
+        let mut w = a.start_batch().unwrap();
+        w.append(b"b1").unwrap();
+        off_b1 = w.complete_uncommitted().unwrap();
+    }
+    assert_eq!(off_b1, 64);
+    {
+        let mut w = a.start_batch().unwrap();
+        w.append(b"b2").unwrap();
+        assert_eq!(w.commit().unwrap(), 0);
+    }
+
+    let mut arch = q.create_archiver().unwrap();
+    arch.archive_up_to_index(1).unwrap();   // boundary past B1
+    drop(arch);
+
+    assert!(matches!(
+        a.commit_batch(off_b1),
+        Err(MmapError::InvalidArgument)
+    ));
+    // Never published: the archive moved start_index past B2 (idx 0), so a
+    // fresh poller starts at 1 and sees EOS — nothing live remains.
+    let mut p = q.create_poller().unwrap();
+    let r = p.poll(|_bi, _iter| NextMove::Advance).unwrap();
+    assert_eq!(r, PollResult::EndOfStream);
+}
+
+/// Mirrors test_batch_commit_out_of_order_multi_legal: stage A then B,
+/// commit B then A — both legal (membership is the gate); exact indices.
+#[test]
+fn batch_commit_out_of_order_multi_legal() {
+    let (q, _rt) = setup_batch("batch_out_of_order_commit");
+    let mut a = q.create_appender().unwrap();
+
+    let off_a;
+    {
+        let mut w = a.start_batch().unwrap();
+        w.append(b"a").unwrap();
+        off_a = w.complete_uncommitted().unwrap();
+    }
+    let off_b;
+    {
+        let mut w = a.start_batch().unwrap();
+        w.append(b"b").unwrap();
+        off_b = w.complete_uncommitted().unwrap();
+    }
+    assert_eq!(off_a, 64);
+    assert_eq!(off_b, 73); // 64 + 4 (count) + 4 (len) + 1 ("a")
+
+    assert_eq!(a.commit_batch(off_b).unwrap(), 0);
+    assert_eq!(a.commit_batch(off_a).unwrap(), 1);
+}
+
+/// Batch archiver forward + undo through the wrapper: archiving advances
+/// the read boundary (poll below it → Archived), undo restores it.
+/// (reclaim_files has no wrapper binding — C-only for both queue types.)
+#[test]
+fn batch_archiver_forward_and_undo() {
+    let (q, _rt) = setup_batch_archivable("batch_archiver_forward_undo");
+    let mut a = q.create_appender().unwrap();
+    for (i, msg) in [b"m0".as_slice(), b"m1", b"m2"].iter().enumerate() {
+        let mut w = a.start_batch().unwrap();
+        w.append(msg).unwrap();
+        assert_eq!(w.commit().unwrap(), i as i64);
+    }
+
+    // Poller created BEFORE the archive: cursor 0. After archiving to 2 the
+    // cursor is below start_index → Archived; after the undo the poll reads
+    // m1/m2 (m0 already served).
+    let mut p = q.create_poller().unwrap();
+    let r = p.poll(|_bi, mut iter| {
+        let (data, _aid) = iter.next().unwrap().expect("one message");
+        assert_eq!(data.to_vec(), b"m0".to_vec());
+        NextMove::Advance
+    }).unwrap();
+    assert_eq!(r, PollResult::Advanced);
+
+    let mut arch = q.create_archiver().unwrap();
+    arch.archive_up_to_index(2).unwrap();
+    // archivable_files binding: nothing is wholly below the boundary at the
+    // default geometry (everything is in payload file 0).
+    assert_eq!(arch.archivable_files().unwrap(), Vec::<String>::new());
+    let r = p.poll(|_bi, _iter| NextMove::Advance).unwrap();
+    assert_eq!(r, PollResult::Archived);   // cursor 1 < start_index 2
+
+    arch.archive_up_to_index(0).unwrap();  // undo
+    drop(arch);
+
+    let mut seen: Vec<Vec<u8>> = Vec::new();
+    for _ in 0..2 {
+        let r = p.poll(|_bi, mut iter| {
+            let (data, _aid) = iter.next().unwrap().expect("one message");
+            seen.push(data.to_vec());
+            NextMove::Advance
+        }).unwrap();
+        assert_eq!(r, PollResult::Advanced);
+    }
+    assert_eq!(seen, vec![b"m1".to_vec(), b"m2".to_vec()]);
+}
+
+/// An empty batch cannot complete nor stage (EINVAL; the writer is
+/// dropped/reusable — Rust consumes the handle either way).
+#[test]
+fn batch_empty_commit_and_stage_rejected() {
+    let (q, _rt) = setup_batch("batch_empty_rejected");
+    let mut a = q.create_appender().unwrap();
+    {
+        let w = a.start_batch().unwrap();
+        assert!(matches!(w.commit(), Err(MmapError::InvalidArgument)));
+    }
+    {
+        let w = a.start_batch().unwrap();
+        assert!(matches!(
+            w.complete_uncommitted(),
+            Err(MmapError::InvalidArgument)
+        ));
+    }
+    // The lane is usable afterwards.
+    let mut w = a.start_batch().unwrap();
+    w.append(b"ok").unwrap();
+    assert_eq!(w.commit().unwrap(), 0);
+}
