@@ -20,10 +20,13 @@
 //!
 //! The archiver does **not** delete files — `archivable_files()` returns the
 //! list of files fully covered by the archive boundary at the time of the
-//! call, but the caller decides what to do with them. A listing is a
-//! snapshot, not permission: mark the listed files, wait, then delete only
-//! files that a fresh listing taken after the wait still names (see
-//! `doc/archiving-design.md`).
+//! call: files no live entry can need at that moment. Delete them with
+//! `reclaim_files()` (always safe). Hand-deleted, moved or compressed, they
+//! are safe provided no undo (`archive_up_to_index` below the current start
+//! index) runs between the listing call and the last unlink; an undo that
+//! ran before the call is harmless, because the listing already reflects it.
+//! There is no deletion wait (CAND-54's commit-intent protocol retired it —
+//! see `doc/archiving-design.md`).
 //!
 //! Thread-confined (`!Send + !Sync`). One per archiver thread.
 
@@ -73,13 +76,17 @@ impl IndexedArchiver {
         Ok(())
     }
 
-    /// List files whose entire content is covered by the archive boundary
-    /// and are safe to delete, move, or compress.
+    /// List files whose entire content is covered by the archive boundary:
+    /// files no live entry can need at the time of the call. Delete them
+    /// with `reclaim_files()` (always safe). If you delete, move or
+    /// compress them yourself, they are safe provided no undo
+    /// (`archive_up_to_index` below the current start index) runs between
+    /// this call and your last unlink; an undo that ran before this call
+    /// is harmless, because the listing already reflects it.
     ///
-    /// Only returns paths to files that actually exist on disk. The caller
-    /// is responsible for any file management (delete, compress, etc.).
-    /// The listing can fail with `MapTimedOut` if a live-header read times
-    /// out during the boundary cap scan (CAND-35).
+    /// Only returns paths to files that actually exist on disk. The listing
+    /// can fail with `MapTimedOut` if a live-header read times out during
+    /// the boundary cap scan (CAND-35).
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
@@ -128,11 +135,10 @@ impl IndexedArchiver {
     /// appender has not written any messages.
     ///
     /// `start_offset` is the per-appender deletion boundary: payload files
-    /// wholly below it may be reclaimed. It is the anchor a joining appender
-    /// with no live entry walks forward from — not a write position.
-    /// Files listed by `archivable_files` are a snapshot, not permission:
-    /// mark, wait, and re-validate with a fresh listing before deleting
-    /// (see `doc/archiving-design.md`).
+    /// wholly below it may be reclaimed. A joining appender with no live
+    /// entry walks forward from the archive line — exactly
+    /// `max(start_offset, archive_offset)` (CAND-54 L(ii); the line never
+    /// moves back) — never from a write position.
     pub fn start_offset(&self, appender_id: u8) -> Result<Option<i64>, MmapError> {
         let mut offset: i64 = 0;
         // SAFETY: offset is a writable local and the archiver is thread-confined.

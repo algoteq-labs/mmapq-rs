@@ -140,10 +140,13 @@ impl IndexedAppender {
     }
 
     /// The appender's payload boundary (`start_offset`): payload files
-    /// wholly below it may be reclaimed. It is a deletion boundary and a
-    /// join anchor, not a write position. A payload appended uncommitted
-    /// below this boundary can no longer be committed (`commit` returns
-    /// `MmapError::InvalidArgument`).
+    /// wholly below it may be reclaimed. It is a deletion boundary, not a
+    /// write position; a joining appender with no live entry anchors at the
+    /// archive line — exactly `max(start_offset, archive_offset)` (CAND-54
+    /// L(ii)). A payload appended uncommitted below the commit floor
+    /// `max(start_offset, archive_offset)` — the archive line — can no
+    /// longer be committed (`commit` returns `MmapError::InvalidArgument`;
+    /// CAND-54 ruling 1).
     pub fn start_offset(&self) -> i64 {
         // SAFETY: The thread-confined handle stays live; this query returns a scalar, not a borrow.
         unsafe { ffi::mmapq_indexed_appender_start_offset(self.inner) }

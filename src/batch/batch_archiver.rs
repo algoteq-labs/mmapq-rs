@@ -64,13 +64,17 @@ impl IndexedBatchArchiver {
         Ok(())
     }
 
-    /// List files whose entire content is covered by the archive boundary
-    /// and are safe to delete, move, or compress.
+    /// List files whose entire content is covered by the archive boundary:
+    /// files no live entry can need at the time of the call. Delete them
+    /// with `reclaim_files()` (always safe). If you delete, move or
+    /// compress them yourself, they are safe provided no undo
+    /// (`archive_up_to_index` below the current start index) runs between
+    /// this call and your last unlink; an undo that ran before this call
+    /// is harmless, because the listing already reflects it.
     ///
-    /// Only returns paths to files that actually exist on disk. The caller
-    /// is responsible for any file management. The listing can fail with
-    /// `MapTimedOut` if a live-header read times out during the boundary
-    /// cap scan (CAND-35).
+    /// Only returns paths to files that actually exist on disk. The listing
+    /// can fail with `MapTimedOut` if a live-header read times out during
+    /// the boundary cap scan (CAND-35).
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
