@@ -156,9 +156,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Cross-language and cross-process
 
 The wire format is identical to the C library and to Python (`mmapq-py`),
-and compatible with Algoteq's Java implementation (tools4j-derived; **not**
-compatible with upstream tools4j — the formats have diverged). A Rust
-process can produce a queue a C or Python process consumes, and vice versa.
+and derives from Algoteq's Java implementation (tools4j-derived; **not**
+compatible with upstream tools4j — the formats have diverged). Sharing
+queues with Java is not supported in 0.2.0: Java-written queues are
+refused at open (schema_version 1); planned at schema 2, under the same
+protocol contract (see the C library's README). A Rust process can produce
+a queue a C or Python process consumes, and vice versa.
 The interop test drives a real C echo server:
 
 ```bash
@@ -228,8 +231,9 @@ types.
 
 **Use mmapq when** you need same-host inter-process messaging where history
 matters: event-sourced services, sequenced command/order flow, market-data
-or telemetry capture, replay-based testing, or a migration bridge between a
-Java system and Rust/C/Python processes sharing one queue.
+or telemetry capture, replay-based testing, or a migration bridge from a
+Java system to Rust/C/Python (via export/import — not by sharing a live
+queue; Java interop is not supported in 0.2.0).
 
 **Use something else when** you need network transport (mmapq is
 same-machine only), pub/sub over many dynamic topics (mmapq queues are
@@ -248,10 +252,18 @@ concurrent appenders off each other's cache lines. Full derivation is in
 
 ## Stability
 
-The wire format and the feature set are **frozen**: queue files written
-today remain readable by every future version, and the API grows only to
-complete parity with the Algoteq Java reference. This is a design position —
-the library you audit today is the library you run in five years.
+The wire format is frozen within a schema version. 0.2.0 writes
+`schema_version=2` and refuses 0.1.0 files (`schema_version=1`) at open
+with `MMAPQ_ESCHEMA` (Rust: `MmapError::SchemaMismatch`): 0.2.0 changed
+what 0.1.0 files mean and accept (the archive-line field, the geometry
+rule, the unified tail rule). To move 0.1.0 data forward, export with a
+0.1.0 library and import into a fresh 0.2.0 queue — the export stream
+format is unchanged. Each release states the schema versions it reads; a
+file of any other version is refused at open. A version change is always
+a clean refusal, never a silent misread. The feature set is frozen and
+the API grows only to complete parity with the Algoteq Java reference —
+a design position: the library you audit today is the library you run in
+five years.
 
 ## Acknowledgements
 
