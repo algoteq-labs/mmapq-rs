@@ -653,12 +653,6 @@ extern "C" {
         it: *mut BatchPayloadIterator,
     ) -> i32;
 
-    pub fn mmapq_mutable_batch_get(
-        b: *mut MutableBatch,
-        message_index: i32,
-        out_length: *mut i32,
-    ) -> *const c_void;
-
     pub fn mmapq_mutable_batch_iterator(
         b: *mut MutableBatch,
         start_message_index: i32,
