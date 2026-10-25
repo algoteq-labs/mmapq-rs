@@ -80,8 +80,8 @@ impl IndexedBatchAppender {
     /// recovery code decides. The `&mut self` borrow enforces the
     /// no-append-while-iterating rule at compile time. Archiving may remove
     /// batches the walk has not reached, even after an undo. Returns
-    /// `Err(Corrupt)` for a pre-0.2.0 queue (zero archive line — recreate
-    /// the queue).
+    /// `Err(Corrupt)` on a zero archive line — a corrupt appender meta
+    /// (pre-0.2.0 queues are refused at open with `SchemaMismatch`).
     pub fn uncommitted_batches(&mut self) -> Result<UncommittedBatches<'_>, MmapError> {
         let mut it = std::ptr::null_mut();
         // SAFETY: The live, thread-confined appender is exclusively borrowed; it is a

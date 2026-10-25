@@ -104,8 +104,14 @@ impl IndexedAppender {
     /// overtaken returns `Err(InvalidArgument)`. The `&mut self` borrow
     /// enforces the no-append-while-iterating rule at compile time.
     /// Archiving may remove messages the walk has not reached, even after
-    /// an undo. Returns `Err(Corrupt)` for a pre-0.2.0 queue (zero archive
-    /// line — recreate the queue).
+    /// an undo. Returns `Err(Corrupt)` on a zero archive line — a corrupt
+    /// appender meta (pre-0.2.0 queues are refused at open with
+    /// `SchemaMismatch`). After a process crash only the lane's
+    /// highest-offset uncommitted record can be torn (single writer,
+    /// sequential writes, the length prefix is written before the data);
+    /// every earlier uncommitted record is byte-intact. Validate before
+    /// committing; with no payload integrity check, discard that record
+    /// and re-request or re-append it.
     pub fn uncommitted_iter(&mut self) -> Result<UncommittedIter<'_>, MmapError> {
         let mut it = std::ptr::null_mut();
         // SAFETY: The live, thread-confined appender is exclusively borrowed; it is a
@@ -141,12 +147,12 @@ impl IndexedAppender {
 
     /// The appender's payload boundary (`start_offset`): payload files
     /// wholly below it may be reclaimed. It is a deletion boundary, not a
-    /// write position; a joining appender with no live entry anchors at the
-    /// archive line — exactly `max(start_offset, archive_offset)` (CAND-54
-    /// L(ii)). A payload appended uncommitted below the commit floor
-    /// `max(start_offset, archive_offset)` — the archive line — can no
-    /// longer be committed (`commit` returns `MmapError::InvalidArgument`;
-    /// CAND-54 ruling 1).
+    /// write position; a joining appender with no live entry anchors at
+    /// `max(start_offset, archive_offset)` — equal to the archive line when
+    /// `start_offset` is not ahead of it (CAND-54 L(ii)). A payload appended
+    /// uncommitted below the commit floor `max(start_offset, archive_offset)`
+    /// can no longer be committed (`commit` returns
+    /// `MmapError::InvalidArgument`; CAND-54 ruling 1).
     pub fn start_offset(&self) -> i64 {
         // SAFETY: The thread-confined handle stays live; this query returns a scalar, not a borrow.
         unsafe { ffi::mmapq_indexed_appender_start_offset(self.inner) }

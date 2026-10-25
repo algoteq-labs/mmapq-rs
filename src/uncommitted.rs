@@ -12,8 +12,9 @@
 //! The `&mut IndexedAppender` borrow enforces the no-append-while-iterating
 //! rule at compile time (C documents it; the Java runtime liveness check is
 //! the rule's origin). Archiving may remove messages the walk has not
-//! reached, even after an undo; queues created before 0.2.0 must be
-//! recreated (zero archive line refusal).
+//! reached, even after an undo; a zero archive line means a corrupt
+//! appender meta (pre-0.2.0 queues are refused at open with
+//! `SchemaMismatch`).
 
 use std::marker::PhantomData;
 use std::slice;
