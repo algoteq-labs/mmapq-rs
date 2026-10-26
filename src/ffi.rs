@@ -384,12 +384,6 @@ extern "C" {
 
     pub fn mmapq_indexed_appender_start_offset(a: *const IndexedAppender) -> i64;
 
-    pub fn mmapq_indexed_appender_iterator(
-        a: *mut IndexedAppender,
-        start_offset: i64,
-        end_offset: i64,
-    ) -> *mut PayloadIterator;
-
     pub fn mmapq_indexed_appender_uncommitted_iterator_checked(
         a: *mut IndexedAppender,
         start_offset: i64,
