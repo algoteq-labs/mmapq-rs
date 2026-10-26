@@ -598,10 +598,6 @@ extern "C" {
 
     pub fn mmapq_indexed_batch_appender_start_batch_checked(appender: *mut IndexedBatchAppender, out: *mut *mut MutableBatch) -> c_int;
 
-    pub fn mmapq_indexed_batch_appender_start_batch(
-        a: *mut IndexedBatchAppender,
-    ) -> *mut MutableBatch;
-
     pub fn mmapq_indexed_batch_appender_commit_batch(
         a: *mut IndexedBatchAppender,
         batch_offset: i64,
