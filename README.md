@@ -231,9 +231,7 @@ types.
 
 **Use mmapq when** you need same-host inter-process messaging where history
 matters: event-sourced services, sequenced command/order flow, market-data
-or telemetry capture, replay-based testing, or a migration bridge from a
-Java system to Rust/C/Python (via export/import — not by sharing a live
-queue; Java interop is not supported in 0.2.0).
+or telemetry capture, and replay-based testing.
 
 **Use something else when** you need network transport (mmapq is
 same-machine only), pub/sub over many dynamic topics (mmapq queues are
