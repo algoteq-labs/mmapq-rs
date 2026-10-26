@@ -17,9 +17,9 @@ This library was extracted from production trading infrastructure, where
 its Java ancestor carried FX flows for years. The design target is the
 storage layer for **event-sourced systems**: sequenced command queues,
 replicated event logs, and deterministic replay. For that architecture, see
-`doc/event-sourcing-guide.md` in the [mmapq](https://github.com/algoteq-labs/mmapq)
+`doc/guide/event-sourcing.md` in the [mmapq](https://github.com/algoteq-labs/mmapq)
 repository; for exact feature coverage across C, Rust, and Python, see
-`doc/feature-matrix.md`.
+`doc/reference/feature-matrix.md`.
 
 ## Ownership and safety
 
@@ -248,7 +248,7 @@ queue (8-byte atomically-committed entries spaced 512 bytes apart via vertical w
 appender ID + payload offset in a 64-bit word) and one payload file per
 appender (`[length prefix][payload]` framing). The cache-line spacing keeps
 concurrent appenders off each other's cache lines. Full derivation is in
-`doc/header_layout_design.md` in the mmapq repository.
+`doc/design/header_layout_design.md` in the mmapq repository.
 
 ## Stability
 

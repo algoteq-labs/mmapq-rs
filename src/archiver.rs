@@ -26,7 +26,7 @@
 //! index) runs between the listing call and the last unlink; an undo that
 //! ran before the call is harmless, because the listing already reflects it.
 //! There is no deletion wait (CAND-54's commit-intent protocol retired it —
-//! see `doc/archiving-design.md`).
+//! see `doc/design/archiving-design.md`).
 //!
 //! Thread-confined (`!Send + !Sync`). One per archiver thread.
 
