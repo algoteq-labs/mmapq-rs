@@ -1,5 +1,9 @@
 # Rust unsafe-boundary audit
 
+Audit record; last reconciled with the source on 2026-11-02 at
+ffcd889. Not covered: the unsafe blocks in src/uncommitted.rs (2) and
+src/batch/uncommitted.rs (3), added after this audit.
+
 This records the original audit and subsequent fixes, **not a declaration that
 the crate is fully sound**. Resolution of the listed findings is limited to
 the ownership and bounds obligations described below. The original findings came from source inspection. Subsequent fixes and
@@ -72,7 +76,6 @@ exists, later publication, and concurrent appenders through one shared factory,
 with both synchronous and asynchronous mapping. C's `test/test_shared_queue.c`
 exercises concurrent participant creation/use; the existing geometry-discovery
 regression now inspects the reader's metadata instead of the factory.
-See `../mmapq/doc/factory-metadata-removal.md` for executed validation and limits.
 
 ### U2: normal and batch archiver runtime ownership — resolved
 
@@ -92,7 +95,6 @@ Each also exercises synchronous mapping. Tests run in bounded subprocesses
 because a dangling C runtime can abort or hang. Before the fix, both lazy-use
 tests returned `InvalidArgument`, both initialized tests timed out, and both
 unused-drop tests passed. After the fix all six pass in debug and release.
-See `archiver-runtime-fix.md` for the file manifest and validation results.
 
 ### U3: benchmark header minimum size — resolved
 
@@ -107,8 +109,7 @@ five and exact request/shutdown bytes at sizes six and 64, including untouched
 trailing payload. The rejection test failed before the fix in each example
 (`size 0 was accepted`), without executing the invalid write. Both tests pass
 in debug and release. CLI checks additionally cover early rejection and valid
-round trips. See `benchmark-header-fix.md` for executed validation, assembly
-findings, and the changed-file manifest.
+round trips.
 
 ### R1: singleton runtime reference leak — resolved
 
@@ -124,7 +125,6 @@ clones and registry ownership. Each singleton is checked over 32 getter/clone/dr
 cycles and overlapping acquisitions. Explicit clones remain usable after the
 original handle drops. Before the fix, both tests observed one leaked caller
 reference after the first cycle. Both pass with debug and release libraries.
-See `singleton-runtime-fix.md` for the manifest and executed validation.
 
 ## Changed-file manifest
 

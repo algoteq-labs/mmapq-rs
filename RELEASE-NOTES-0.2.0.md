@@ -7,7 +7,9 @@ authoritative for the wire format (schema_version 2: 0.1.0
 queues are refused at open; recreate or export/import to migrate), the
 removed/replaced C functions, the behavior changes under unchanged names,
 and the Java-interop position.** This file carries only the
-binding-specific entries.
+binding-specific entries. Package versions are deliberately unchanged
+until release preparation; these changes break source compatibility, not
+the queue or export layout.
 
 ## Breaking (Rust)
 
@@ -16,6 +18,32 @@ binding-specific entries.
   `mmapq_runtime_destroy`). The removed C factory metadata getters and
   the offset-based batch discard were never part of the safe Rust
   surface.
+- `IndexedQueue` remains `Send + Sync` and now owns only factory
+  configuration and runtime handles. Use a reader or poller for the live
+  start index. `QueueConfig` creation preferences are kept separately and
+  are not the authoritative geometry of an existing queue; no replacement
+  public geometry query is added.
+- Declare readers with `let mut reader`. Reads, metadata operations that
+  enter C, and transfer source arguments require exclusive borrows.
+  Process `message.data()` before reading again; explicit `to_vec()`
+  remains available.
+- Declare a batch view mutable; `batch.iter()` exclusively borrows it.
+  Replace `for` and iterator adapters with a lending loop. Standard
+  `Iterator`, `collect`, and simultaneous cursors over one batch are
+  intentionally unavailable; `next()` distinguishes exhaustion from
+  corruption/timeouts and keeps errors sticky until the batch is re-read.
+- Poll handlers still return `NextMove`; handle cursor errors explicitly.
+  A corrupt iterator prevents cursor advancement even if the callback
+  asks to advance, and already executed application side effects are not
+  rolled back.
+- `append_remaining_from_iter` copies after the last yielded message; its
+  source cursor cannot be advanced while the previous slice is still used.
+- `Corrupt` and `Internal` diagnostic payloads are `Cow<'static, str>`
+  (use `.into()` for owned diagnostics); unknown C results are
+  `UnexpectedCode(i32)`; mapper aborts are `CallbackAborted`.
+- Failures may leave a committed destination prefix or an incomplete
+  export file. Transfers are not atomic and retries are not automatically
+  idempotent.
 
 ## New (Rust)
 
@@ -39,3 +67,11 @@ binding-specific entries.
   caught and unwound only after C cleanup; C error mapping is
   allocation-free. An ffi↔C layout gate pins `ReadingContext` /
   `BatchReadingContext`.
+- Transfer mapper panics stop the operation and resume only after C
+  cleanup; no silent automatic-ID fallback occurs.
+- Reader/cursor thread confinement is unchanged. Independent readers can
+  share a runtime but own distinct mapping/accessor state. The library
+  adds no runtime borrow checks, payload ownership, reference counting,
+  or mapping pins to implement these lifetimes; mapping and producer
+  copies already present in the underlying C implementation are not
+  eliminated.

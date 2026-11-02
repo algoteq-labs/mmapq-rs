@@ -47,7 +47,7 @@ The bindings provide ownership and error handling around the C API:
   `Iterator`: process each payload before advancing. No implicit payload
   copies, heap ownership, locks, or runtime borrow checks are introduced.
   This is source-breaking relative to published 0.1.0; see
-  [migration notes](doc/hardening-migration.md).
+  [release notes](RELEASE-NOTES-0.2.0.md).
 - **Poll closures are panic-safe.** A panic inside a poll handler is caught
   at the FFI boundary and re-raised after the C stack frame unwinds cleanly,
   so a panicking closure cannot leave the C library in a torn state or
