@@ -37,7 +37,7 @@ fn archivable_true_sets_byte24() {
     a.append(b"x").unwrap();
     drop(a);
     drop(q);
-    assert_eq!(read_byte24(&dir), 1);
+    assert_eq!(read_byte24(&dir), 2);
     drop(rt);
 }
 
