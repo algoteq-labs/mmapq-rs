@@ -1,0 +1,40 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'ci-check/**'
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust tests (committed gitlink)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout mmapq-rs (committed gitlink)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          submodules: recursive
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+      - name: CAND-55 hygiene wipe
+        shell: bash
+        run: |
+          find c -name '*.o' -delete
+          find c -name 'libmmapq.a' -delete
+      - name: cargo test
+        run: cargo test
