@@ -189,3 +189,47 @@ impl std::fmt::Debug for BatchMessage<'_> {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::batch::IndexedBatchQueue;
+    use crate::queue::QueueConfig;
+    use crate::runtime::Runtime;
+    use crate::types::BatchEntryStatus;
+
+    /// POLL-ARCH-01 (outcome level): a batch index below a moved
+    /// start_index reads as `Ok(None)` and `entry_status` reports
+    /// `BatchEntryStatus::Archived`. The mid-call race is pinned in C
+    /// (`test/test_poll_arch_pins.c`); the Rust crate builds the C mirror
+    /// without test hooks by owner ruling, so this is the outcome-level
+    /// pin: archive past the batch index, then read/entry_status it.
+    /// (The batch poller's ARCHIVED surface is already pinned in
+    /// `tests/recovery.rs::test_batch_archiver_forward_and_undo`.)
+    #[test]
+    fn test_batch_read_archived_below_moved_start_index() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-batch-reader").join("read_archived");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = IndexedBatchQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt)
+                .archivable(true),
+        )
+        .unwrap();
+        {
+            let mut a = q.create_appender().unwrap();
+            let mut w = a.start_batch().unwrap();
+            w.append(b"m0").unwrap();
+            assert_eq!(w.commit().unwrap(), 0);
+        }
+        let mut r = q.create_reader().unwrap();
+        assert!(r.read(0).unwrap().is_some());
+        let mut arch = q.create_archiver().unwrap();
+        arch.archive_up_to_index(1).unwrap();
+        drop(arch);
+        assert_eq!(r.entry_status(0), BatchEntryStatus::Archived);
+        assert!(r.read(0).unwrap().is_none());
+    }
+}

@@ -407,4 +407,51 @@ mod tests {
             .expect("poll should succeed");
         assert_eq!(result, PollResult::Stopped);
     }
+
+    /// POLL-ARCH-01 (outcome level): a cursor below a moved start_index
+    /// answers `PollResult::Archived` — the surface the C failure-path
+    /// re-check now also answers when the archiver wins the race between
+    /// the pre-read check and the read. The race itself is pinned in C
+    /// (`test/test_poll_arch_pins.c`); the Rust crate builds the C mirror
+    /// without test hooks by owner ruling (no cargo feature), so this is
+    /// the outcome-level pin: archive past the cursor, then poll.
+    #[test]
+    fn test_poll_archived_below_moved_start_index() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir()
+            .join("mmap-rs-test-poller")
+            .join("test_poll_archived");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt)
+                .archivable(true),
+        )
+        .unwrap();
+        {
+            let mut a = q.create_appender().unwrap();
+            a.append(b"m0").unwrap();
+            a.append(b"m1").unwrap();
+        }
+        let mut p = q.create_poller().unwrap();
+        // Poll once first: the poller initialises its cursor from
+        // start_index at first poll, so the archive must happen after the
+        // cursor exists (same shape as tests/recovery.rs).
+        let served = p
+            .poll(|_idx, _aid, data| {
+                assert_eq!(data, b"m0");
+                NextMove::Advance
+            })
+            .expect("poll should succeed");
+        assert_eq!(served, PollResult::Advanced);
+        let mut arch = q.create_archiver().unwrap();
+        arch.archive_up_to_index(2).unwrap();
+        drop(arch);
+        let result = p
+            .poll(|_idx, _aid, _data| NextMove::Advance)
+            .expect("poll should succeed");
+        assert_eq!(result, PollResult::Archived); // cursor 1 < start_index 2
+    }
 }

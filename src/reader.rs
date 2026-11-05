@@ -180,3 +180,46 @@ impl std::fmt::Debug for Message<'_> {
             .finish()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::queue::QueueConfig;
+    use crate::runtime::Runtime;
+    use crate::types::EntryStatus;
+    use crate::IndexedQueue;
+
+    /// POLL-ARCH-01 (outcome level): an index below a moved start_index
+    /// reads as `Ok(None)` (the documented ARCHIVED/END_OF_STREAM collapse
+    /// on read()) and `entry_status` reports `EntryStatus::Archived`. The
+    /// mid-call race is pinned in C (`test/test_poll_arch_pins.c`); the
+    /// Rust crate builds the C mirror without test hooks by owner ruling,
+    /// so this is the outcome-level pin: archive past the index, then
+    /// read/entry_status it.
+    #[test]
+    fn test_read_archived_below_moved_start_index() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-reader").join("read_archived");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt)
+                .archivable(true),
+        )
+        .unwrap();
+        {
+            let mut a = q.create_appender().unwrap();
+            a.append(b"m0").unwrap();
+            a.append(b"m1").unwrap();
+        }
+        let mut r = q.create_reader().unwrap();
+        assert!(r.read(0).unwrap().is_some());
+        let mut arch = q.create_archiver().unwrap();
+        arch.archive_up_to_index(1).unwrap();
+        drop(arch);
+        assert_eq!(r.entry_status(0), EntryStatus::Archived);
+        assert!(r.read(0).unwrap().is_none());
+        assert!(r.read(1).unwrap().is_some()); // above the line, still readable
+    }
+}
