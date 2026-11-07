@@ -68,6 +68,9 @@ the queue or export layout.
 - Export errors are preserved across output-close failures.
 - The archiver retains its runtimes; shared queue factories are safe.
 - `archivable_files` propagates negative `MMAPQ_*` error codes.
+- `Runtime::set_affinity` maps the C result through the standard error
+  mapping: an out-of-range CPU is `InvalidArgument`, a closed runtime
+  `QueueClosed`, allocation failure `OutOfMemory` (was `Internal` for all).
 
 ## Hardening (Rust)
 

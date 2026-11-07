@@ -105,7 +105,9 @@ impl Runtime {
 
     /// Pin the background thread of this Runtime to the given CPU core.
     ///
-    /// Returns `Ok(())` on success, or an error code from the C library.
+    /// Returns `Ok(())` once the pin is scheduled; `InvalidArgument` for a
+    /// CPU index the C library cannot encode, `QueueClosed` for a closed
+    /// runtime, `OutOfMemory` on allocation failure.
     pub fn set_affinity(&self, cpu_core: u32) -> Result<(), MmapError> {
         // SAFETY: self retains a counted reference while the C function uses its pthread
         // handle; the OS validates the requested CPU affinity.
@@ -113,10 +115,7 @@ impl Runtime {
         if ret == 0 {
             Ok(())
         } else {
-            Err(MmapError::Internal(format!(
-                "mmapq_runtime_set_affinity failed with code {}",
-                ret
-            ).into()))
+            Err(map_rc(ret))
         }
     }
 
@@ -308,5 +307,18 @@ mod tests {
     fn test_runtime_is_closed() {
         let rt = Runtime::region_mapper().unwrap();
         assert!(!rt.is_closed(), "fresh runtime should not be closed");
+    }
+
+    /// C rejects a CPU index cpu_set_t cannot encode with MMAPQ_EINVAL;
+    /// the binding must surface it as InvalidArgument, not Internal.
+    /// u32::MAX also covers the `as i32` wrap to a negative index.
+    #[test]
+    fn test_set_affinity_out_of_range_is_invalid_argument() {
+        let rt = Runtime::region_mapper().unwrap();
+        for cpu in [1_000_000u32, u32::MAX] {
+            assert!(matches!(rt.set_affinity(cpu), Err(MmapError::InvalidArgument)),
+                "cpu {cpu}: {:?}", rt.set_affinity(cpu));
+        }
+        assert!(!rt.is_closed(), "a rejected pin must leave the runtime open");
     }
 }
