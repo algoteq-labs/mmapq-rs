@@ -82,7 +82,7 @@ pub use queue::{IndexedQueue, QueueConfig};
 pub use appender::IndexedAppender;
 pub use uncommitted::UncommittedIter;
 pub use poller::IndexedPoller;
-pub use reader::{IndexedReader, Message};
+pub use reader::{IndexedReader, Message, ReadResult};
 pub use archiver::IndexedArchiver;
 pub use transfer::*;
 pub use batch::{

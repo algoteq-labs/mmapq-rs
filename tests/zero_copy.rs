@@ -82,7 +82,7 @@ fn region_reuse_and_bulk_copy_preserve_borrowed_payloads() {
         let mut destination_appender = destination.create_appender().unwrap();
         let mut reader = source.create_reader().unwrap();
         for index in [0, 1, 0] {
-            let mut batch = reader.read(index).unwrap().unwrap();
+            let mut batch = reader.read(index).unwrap().available().unwrap();
             for _ in 0..2 {
                 let mut cursor = batch.iter();
                 without_allocations(|| {
@@ -105,7 +105,7 @@ fn region_reuse_and_bulk_copy_preserve_borrowed_payloads() {
         }
         let mut destination_reader = destination.create_reader().unwrap();
         for index in 0..3 {
-            let mut batch = destination_reader.read(index).unwrap().unwrap();
+            let mut batch = destination_reader.read(index).unwrap().available().unwrap();
             assert_eq!(batch.message_count(), 192);
             let mut cursor = batch.iter();
             for sequence in 0..192_u8 {
@@ -121,7 +121,7 @@ fn region_reuse_and_bulk_copy_preserve_borrowed_payloads() {
         let mut normal_reader = normal.create_reader().unwrap();
         for index in (0..192).chain((0..192).rev()) {
             without_allocations(|| {
-                let message = normal_reader.read(index).unwrap().unwrap();
+                let message = normal_reader.read(index).unwrap().available().unwrap();
                 std::thread::yield_now();
                 assert_eq!(message.data(), &[index as u8; 1020]);
             });
@@ -150,11 +150,11 @@ fn corruption_is_allocation_free_and_cannot_advance_poller() {
     writer.append(b"bad").unwrap();
     assert_eq!(writer.commit().unwrap(), 0);
     let mut reader = queue.create_reader().unwrap();
-    let offset = reader.read(0).unwrap().unwrap().batch_offset();
+    let offset = reader.read(0).unwrap().available().unwrap().batch_offset();
     let file = std::fs::OpenOptions::new().write(true)
         .open(directory.join("batch").join(format!("payload_{}_0", appender.id()))).unwrap();
     file.write_all_at(&0_i32.to_le_bytes(), offset as u64 + 12).unwrap();
-    let mut batch = reader.read(0).unwrap().unwrap();
+    let mut batch = reader.read(0).unwrap().available().unwrap();
     let mut cursor = batch.iter();
     without_allocations(|| {
         assert_eq!(cursor.next().unwrap().unwrap().0, b"good");

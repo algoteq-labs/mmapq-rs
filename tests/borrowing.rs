@@ -26,20 +26,20 @@ fn borrowing_contracts() {
         None, false));
     for operation in ["read(1)", "read_first()", "read_last()", "entry_status(1)", "last_index()", "start_index()"] {
         cases.push((format!("reader_{}", cases.len()), format!(
-            "fn check(reader: &mut mmapq::IndexedReader) {{ let message = reader.read(0).unwrap().unwrap(); let bytes = message.data(); let _ = reader.{operation}; std::hint::black_box(bytes); }}"
+            "fn check(reader: &mut mmapq::IndexedReader) {{ let message = reader.read(0).unwrap().available().unwrap(); let bytes = message.data(); let _ = reader.{operation}; std::hint::black_box(bytes); }}"
         ), Some("E0499"), true));
     }
     cases.extend([
-        ("transfer".into(), "fn check(reader: &mut mmapq::IndexedReader) { let message = reader.read(0).unwrap().unwrap(); let _ = mmapq::transfer::QueueTransfer::export(reader, \"unused\", 0, 1, mmapq::transfer::StartIndexMode::Rebase); std::hint::black_box(message.data()); }".into(), Some("E0499"), true),
+        ("transfer".into(), "fn check(reader: &mut mmapq::IndexedReader) { let message = reader.read(0).unwrap().available().unwrap(); let _ = mmapq::transfer::QueueTransfer::export(reader, \"unused\", 0, 1, mmapq::transfer::StartIndexMode::Rebase); std::hint::black_box(message.data()); }".into(), Some("E0499"), true),
         ("batch_step".into(), "fn check(cursor: &mut mmapq::batch::BatchMessageIter<'_>) { let first = cursor.next(); let _ = cursor.next(); std::hint::black_box(first); }".into(), Some("E0499"), true),
         ("batch_reset".into(), "fn check(batch: &mut mmapq::batch::BatchMessage<'_>) { let mut first = batch.iter(); let _ = batch.iter(); std::hint::black_box(first.next()); }".into(), Some("E0499"), true),
-        ("batch_reader".into(), "fn check(reader: &mut mmapq::batch::IndexedBatchReader) { let batch = reader.read(0).unwrap().unwrap(); let _ = reader.read(1); std::hint::black_box(batch.index()); }".into(), Some("E0499"), true),
+        ("batch_reader".into(), "fn check(reader: &mut mmapq::batch::IndexedBatchReader) { let batch = reader.read(0).unwrap().available().unwrap(); let _ = reader.read(1); std::hint::black_box(batch.index()); }".into(), Some("E0499"), true),
         ("bulk_copy".into(), "fn check(writer: &mut mmapq::batch::BatchWriter<'_>, cursor: &mut mmapq::batch::BatchMessageIter<'_>) { let first = cursor.next(); let _ = writer.append_remaining_from_iter(cursor); std::hint::black_box(first); }".into(), Some("E0499"), true),
         ("uncommitted_iter".into(), "fn check(a: &mut mmapq::IndexedAppender) { let mut it = a.uncommitted_iter().unwrap(); let _ = a.append(b\"x\"); std::hint::black_box(it.next()); }".into(), Some("E0499"), false),
         ("uncommitted_batches".into(), "fn check(a: &mut mmapq::batch::IndexedBatchAppender) { let mut it = a.uncommitted_batches().unwrap(); let _ = a.start_batch(); std::hint::black_box(it.next()); }".into(), Some("E0499"), false),
-        ("drop_owner".into(), "fn check(mut reader: mmapq::IndexedReader) { let message = reader.read(0).unwrap().unwrap(); drop(reader); std::hint::black_box(message.data()); }".into(), Some("E0505"), false),
+        ("drop_owner".into(), "fn check(mut reader: mmapq::IndexedReader) { let message = reader.read(0).unwrap().available().unwrap(); drop(reader); std::hint::black_box(message.data()); }".into(), Some("E0505"), false),
         ("escape_callback".into(), "fn check(poller: &mut mmapq::batch::IndexedBatchPoller) { let mut escaped = None; let _ = poller.poll(|_, cursor| { escaped = Some(cursor); mmapq::NextMove::Stop }); std::hint::black_box(escaped); }".into(), Some("E0521"), false),
-        ("positive_reader".into(), "fn check(reader: &mut mmapq::IndexedReader) { { let message = reader.read(0).unwrap().unwrap(); std::hint::black_box(message.data()); } let _ = reader.read(1); }".into(), None, false),
+        ("positive_reader".into(), "fn check(reader: &mut mmapq::IndexedReader) { { let message = reader.read(0).unwrap().available().unwrap(); std::hint::black_box(message.data()); } let _ = reader.read(1); }".into(), None, false),
         ("positive_cursor".into(), "fn check(cursor: &mut mmapq::batch::BatchMessageIter<'_>) { std::hint::black_box(cursor.next()); std::hint::black_box(cursor.next()); }".into(), None, false),
     ]);
     for kind in ["mmapq::IndexedReader", "mmapq::batch::IndexedBatchReader", "mmapq::reader::Message<'static>", "mmapq::batch::BatchMessage<'static>", "mmapq::batch::BatchMessageIter<'static>"] {

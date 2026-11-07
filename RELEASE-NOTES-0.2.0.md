@@ -44,6 +44,15 @@ the queue or export layout.
 - Failures may leave a committed destination prefix or an incomplete
   export file. Transfers are not atomic and retries are not automatically
   idempotent.
+- `IndexedReader` and `IndexedBatchReader` `read` / `read_first` /
+  `read_last` return `Result<ReadResult<T>, MmapError>` instead of
+  `Result<Option<T>, MmapError>`. `ReadResult` is `Available(T)`,
+  `EndOfStream` or `Archived`: an archived index (below the queue's start
+  index) no longer reads as `None` indistinguishable from "not yet
+  written". Migrate `.unwrap()` on the option to `.available()` (which
+  maps both non-available outcomes to `None`, the 0.1.0 behaviour), or
+  match the three variants. Errors are unchanged (`Err(MmapError)`);
+  `entry_status` and the pollers are unchanged.
 
 ## New (Rust)
 

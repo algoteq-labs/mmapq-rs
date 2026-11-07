@@ -71,8 +71,8 @@ macro_rules! lifetime_test {
                     if $use_after {
                         let queue = <$queue>::create(QueueConfig::new(dir.to_str().unwrap(), "q")).unwrap();
                         let mut reader = queue.create_reader().unwrap();
-                        assert!(reader.read(0).unwrap().is_none());
-                        assert!(reader.read(1).unwrap().is_none());
+                        assert!(matches!(reader.read(0).unwrap(), mmapq::ReadResult::Archived));
+                        assert!(matches!(reader.read(1).unwrap(), mmapq::ReadResult::Archived));
                     }
                     std::fs::remove_dir_all(dir).unwrap();
                 }

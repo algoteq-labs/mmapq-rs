@@ -29,7 +29,7 @@ fn verify_normal(dest: &Path, expected_si: i64, expected_li: i64) {
     let mut r = q.create_reader().unwrap();
     assert_eq!(r.start_index(), expected_si);
     assert_eq!(r.last_index(), expected_li);
-    assert!(r.read(expected_si).unwrap().is_some());
+    assert!(r.read(expected_si).unwrap().available().is_some());
     drop(r);
     drop(q);
 }
@@ -480,7 +480,7 @@ fn test_import_preserves_appender_ids() {
     let mut seen_id1 = false;
     let mut seen_id2 = false;
     for i in 0..=r_dest.last_index() {
-        let msg = r_dest.read(i).unwrap().unwrap();
+        let msg = r_dest.read(i).unwrap().available().unwrap();
         if msg.appender_id() == id1 { seen_id1 = true; }
         if msg.appender_id() == id2 { seen_id2 = true; }
     }
@@ -546,7 +546,7 @@ fn test_import_auto_on_conflict() {
         QueueConfig::new(dest.to_str().unwrap(), "q"),
     ).unwrap();
     let mut r_dest = q_dest2.create_reader().unwrap();
-    let msg = r_dest.read(0).unwrap().unwrap();
+    let msg = r_dest.read(0).unwrap().available().unwrap();
     assert_ne!(msg.appender_id(), 0, "auto-assign should not use the held ID 0");
     drop(r_dest); drop(q_dest2);
 
@@ -615,9 +615,9 @@ fn test_batch_import_preserves_appender_ids() {
         QueueConfig::new(dest.to_str().unwrap(), "q"),
     ).unwrap();
     let mut r_dest = q_dest.create_reader().unwrap();
-    let _b0 = r_dest.read(0).unwrap().unwrap();
+    let _b0 = r_dest.read(0).unwrap().available().unwrap();
     let got0 = r_dest.appender_id();
-    let _b1 = r_dest.read(1).unwrap().unwrap();
+    let _b1 = r_dest.read(1).unwrap().available().unwrap();
     let got1 = r_dest.appender_id();
     assert!((got0 == id1 && got1 == id2) || (got0 == id2 && got1 == id1));
     drop(r_dest); drop(q_dest);

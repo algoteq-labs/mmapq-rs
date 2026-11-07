@@ -84,7 +84,7 @@ fn test_single_process_uncommitted_append() {
     // Read back with reader
     let mut reader = q.create_reader().unwrap();
     for (i, &expected_idx) in indices.iter().enumerate() {
-        let msg = reader.read(expected_idx).unwrap().expect("message should exist");
+        let msg = reader.read(expected_idx).unwrap().available().expect("message should exist");
         assert_eq!(msg.index(), expected_idx);
         let s = String::from_utf8_lossy(msg.data());
         assert_eq!(s, format!("uncommitted-{}", i));
@@ -168,13 +168,13 @@ fn test_reader_metadata() {
 
     // Check individual reads
     for i in 0..=last_idx {
-        let msg = reader.read(i).unwrap().expect("message should exist");
+        let msg = reader.read(i).unwrap().available().expect("message should exist");
         assert_eq!(msg.index(), i);
     }
 
-    // Read beyond last — should be None
+    // Read beyond last — not yet written
     let beyond = reader.read(last_idx + 1).unwrap();
-    assert!(beyond.is_none(), "read past end should be None");
+    assert!(matches!(beyond, mmapq::ReadResult::EndOfStream), "read past end should be EndOfStream");
 }
 
 #[test]

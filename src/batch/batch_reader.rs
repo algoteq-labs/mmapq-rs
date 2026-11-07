@@ -7,6 +7,7 @@ use std::marker::PhantomData;
 use crate::batch::BatchMessageIter;
 use crate::error::{map_rc, MmapError};
 use crate::ffi;
+use crate::reader::ReadResult;
 use crate::types::BatchEntryStatus;
 
 /// Random-access batch reader. Thread-confined (`!Send + !Sync`).
@@ -39,53 +40,61 @@ impl IndexedBatchReader {
     }
 
     /// Read the batch at the given index.
-    pub fn read(&mut self, index: i64) -> Result<Option<BatchMessage<'_>>, MmapError> {
+    ///
+    /// Returns `Ok(ReadResult::Available(BatchMessage))` if the batch exists,
+    /// `Ok(ReadResult::EndOfStream)` if it is not yet written,
+    /// `Ok(ReadResult::Archived)` if it is below the queue's start index,
+    /// `Err(MapTimedOut)` on mapping timeout.
+    pub fn read(&mut self, index: i64) -> Result<ReadResult<BatchMessage<'_>>, MmapError> {
         let ctx = &mut self.ctx;
         // SAFETY: The live reader retains its runtime and ctx is a writable owned field.
         // The exclusive reader borrow prevents remapping while a BatchMessage is used.
         unsafe { ffi::mmapq_indexed_batch_reader_read(self.inner, index, ctx) };
         match ctx.status {
-            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
+            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(ReadResult::Available(BatchMessage {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM | ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM => Ok(ReadResult::EndOfStream),
+            ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(ReadResult::Archived),
             // SAFETY: The reader remains live after the failed read; this only fetches its error code.
             ffi::MMAPQ_BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }
 
-    /// Read the first unarchived batch.
-    pub fn read_first(&mut self) -> Result<Option<BatchMessage<'_>>, MmapError> {
+    /// Read the first unarchived batch. Outcomes as for [`read`](Self::read).
+    pub fn read_first(&mut self) -> Result<ReadResult<BatchMessage<'_>>, MmapError> {
         let ctx = &mut self.ctx;
         // SAFETY: The live reader retains its runtime and ctx is a writable owned field.
         // The exclusive reader borrow prevents remapping while a BatchMessage is used.
         unsafe { ffi::mmapq_indexed_batch_reader_read_first(self.inner, ctx) };
         match ctx.status {
-            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
+            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(ReadResult::Available(BatchMessage {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM | ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM => Ok(ReadResult::EndOfStream),
+            ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(ReadResult::Archived),
             // SAFETY: The reader remains live after the failed read; this only fetches its error code.
             ffi::MMAPQ_BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
         }
     }
 
-    /// Read the last committed batch.
-    pub fn read_last(&mut self) -> Result<Option<BatchMessage<'_>>, MmapError> {
+    /// Read the last committed batch. Outcomes as for [`read`](Self::read).
+    pub fn read_last(&mut self) -> Result<ReadResult<BatchMessage<'_>>, MmapError> {
         let ctx = &mut self.ctx;
         // SAFETY: The live reader retains its runtime and ctx is a writable owned field.
         // The exclusive reader borrow prevents remapping while a BatchMessage is used.
         unsafe { ffi::mmapq_indexed_batch_reader_read_last(self.inner, ctx) };
         match ctx.status {
-            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(Some(BatchMessage {
+            ffi::MMAPQ_BATCH_ENTRY_AVAILABLE => Ok(ReadResult::Available(BatchMessage {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM | ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_BATCH_ENTRY_END_OF_STREAM => Ok(ReadResult::EndOfStream),
+            ffi::MMAPQ_BATCH_ENTRY_ARCHIVED => Ok(ReadResult::Archived),
             // SAFETY: The reader remains live after the failed read; this only fetches its error code.
             ffi::MMAPQ_BATCH_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_batch_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown batch entry status".into())),
@@ -196,10 +205,12 @@ mod tests {
     use crate::queue::QueueConfig;
     use crate::runtime::Runtime;
     use crate::types::BatchEntryStatus;
+    use crate::ReadResult;
 
-    /// POLL-ARCH-01 (outcome level): a batch index below a moved
-    /// start_index reads as `Ok(None)` and `entry_status` reports
-    /// `BatchEntryStatus::Archived`. The mid-call race is pinned in C
+    /// POLL-ARCH-01 (outcome level), E3: a batch index below a moved
+    /// start_index reads as `ReadResult::Archived` — distinct from
+    /// `EndOfStream` for a batch not yet written — and `entry_status`
+    /// reports `BatchEntryStatus::Archived`. The mid-call race is pinned in C
     /// (`test/test_poll_arch_pins.c`); the Rust crate builds the C mirror
     /// without test hooks by owner ruling, so this is the outcome-level
     /// pin: archive past the batch index, then read/entry_status it.
@@ -220,16 +231,25 @@ mod tests {
         .unwrap();
         {
             let mut a = q.create_appender().unwrap();
-            let mut w = a.start_batch().unwrap();
-            w.append(b"m0").unwrap();
-            assert_eq!(w.commit().unwrap(), 0);
+            for (expected, payload) in [(0, b"m0"), (1, b"m1")] {
+                let mut w = a.start_batch().unwrap();
+                w.append(payload).unwrap();
+                assert_eq!(w.commit().unwrap(), expected);
+            }
         }
         let mut r = q.create_reader().unwrap();
-        assert!(r.read(0).unwrap().is_some());
+        assert_eq!(r.read(0).unwrap().available().unwrap().message_count(), 1);
+        assert!(matches!(r.read(2).unwrap(), ReadResult::EndOfStream)); // not yet written
         let mut arch = q.create_archiver().unwrap();
         arch.archive_up_to_index(1).unwrap();
         drop(arch);
         assert_eq!(r.entry_status(0), BatchEntryStatus::Archived);
-        assert!(r.read(0).unwrap().is_none());
+        let below = r.read(0).unwrap();
+        assert!(below.is_archived());
+        assert!(matches!(below, ReadResult::Archived));
+        assert!(matches!(r.read_first().unwrap(), ReadResult::Available(b) if b.index() == 1));
+        let mut above = r.read(1).unwrap().available().unwrap(); // above the line, still readable
+        assert_eq!(above.iter().next().unwrap().unwrap().0, b"m1");
+        assert!(matches!(r.read(2).unwrap(), ReadResult::EndOfStream)); // still not written, not archived
     }
 }

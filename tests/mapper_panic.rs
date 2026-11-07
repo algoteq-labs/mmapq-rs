@@ -25,7 +25,7 @@ fn mapper_panic_is_resumed_after_c_cleanup() {
     assert_eq!(payload.downcast_ref::<&str>(), Some(&"mapper sentinel"));
     let destination = IndexedQueue::create(QueueConfig::new(directory.to_str().unwrap(), "destination")).unwrap();
     let mut destination_reader = destination.create_reader().unwrap();
-    assert!(destination_reader.read(0).unwrap().is_none());
+    assert!(matches!(destination_reader.read(0).unwrap(), mmapq::ReadResult::EndOfStream));
     let mut destination_appender = destination.create_appender_with_id(0).unwrap();
     assert_eq!(destination_appender.append(b"after failure").unwrap(), 0);
     drop(destination_appender);

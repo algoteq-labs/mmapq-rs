@@ -27,12 +27,12 @@ fn shared_factory_participants_discover_late_metadata() {
             workers.push(std::thread::spawn(move || {
                 let mut reader = queue.create_reader().unwrap();
                 let mut poller = queue.create_poller().unwrap();
-                assert!(reader.read(17).unwrap().is_none());
+                assert!(matches!(reader.read(17).unwrap(), mmapq::ReadResult::EndOfStream));
                 assert_eq!(poller.poll(|_, _, _| panic!("not published")).unwrap(), PollResult::EndOfStream);
                 ready.wait();
                 published.wait();
                 assert_eq!(reader.start_index(), 17);
-                assert_eq!(reader.read(17).unwrap().unwrap().data(), b"seed");
+                assert_eq!(reader.read(17).unwrap().available().unwrap().data(), b"seed");
                 assert_eq!(poller.poll(|index, _, payload| {
                     assert_eq!(index, 17);
                     assert_eq!(payload, b"seed");
@@ -40,7 +40,7 @@ fn shared_factory_participants_discover_late_metadata() {
                 }).unwrap(), PollResult::Advanced);
                 let mut appender = queue.create_appender_with_id(id).unwrap();
                 let index = appender.append(&[id]).unwrap();
-                assert_eq!(reader.read(index).unwrap().unwrap().data(), &[id]);
+                assert_eq!(reader.read(index).unwrap().available().unwrap().data(), &[id]);
                 index
             }));
         }

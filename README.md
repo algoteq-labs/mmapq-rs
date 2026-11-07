@@ -57,6 +57,11 @@ The bindings provide ownership and error handling around the C API:
   `MapTimedOut` — so "the data is damaged" (`Corrupt`) is distinguishable
   from "retry" (`MapTimedOut`) at the call site instead of being one
   overloaded `-1`.
+- **Read outcomes are typed.** `read`, `read_first` and `read_last` on
+  `IndexedReader` and `IndexedBatchReader` return a `#[must_use]`
+  `ReadResult`: `Available(message)`, `EndOfStream` (not yet written —
+  it may appear later) or `Archived` (below the queue's start index —
+  it will not). Failures stay in `Err(MmapError)`.
 
 None of this costs anything at runtime: the safety is in the types, and the
 generated code is the same FFI calls you would write by hand.

@@ -1,8 +1,8 @@
 //! Random-access reader — read any message by index without advancing a cursor.
 //!
 //! `IndexedReader` provides zero-copy access to committed messages. Each
-//! `read()` returns a `Message<'_>` whose data pointer borrows from the
-//! reader's mapped memory. The borrow prevents another read until the message's last use.
+//! `read()` returns a [`ReadResult`]; an available entry is a `Message<'_>`
+//! whose data pointer borrows from the reader's mapped memory. The borrow prevents another read until the message's last use.
 //!
 //! For long-lived access, call `Message::to_vec()` to produce an owned copy.
 //!
@@ -13,6 +13,40 @@ use std::marker::PhantomData;
 use crate::error::{map_rc, MmapError};
 use crate::ffi;
 use crate::types::EntryStatus;
+
+/// Outcome of a random-access read (`IndexedReader` and `IndexedBatchReader`).
+///
+/// Mirrors the C entry statuses AVAILABLE / END_OF_STREAM / ARCHIVED; the
+/// fourth, ERROR, is returned as `Err(MmapError)`. `EndOfStream` and
+/// `Archived` call for different actions: an index that is not yet written
+/// may become readable later, while an archived index lies below the
+/// queue's start index and stays unreadable unless an archiver undo lowers
+/// that index again.
+#[must_use = "a read can report EndOfStream or Archived instead of an entry"]
+#[derive(Debug)]
+pub enum ReadResult<T> {
+    /// The entry exists.
+    Available(T),
+    /// The index is not yet written.
+    EndOfStream,
+    /// The index is below the queue's start index.
+    Archived,
+}
+
+impl<T> ReadResult<T> {
+    /// The entry if available; `None` for `EndOfStream` and `Archived`.
+    pub fn available(self) -> Option<T> {
+        match self {
+            ReadResult::Available(entry) => Some(entry),
+            ReadResult::EndOfStream | ReadResult::Archived => None,
+        }
+    }
+
+    /// Whether the read reported `Archived`.
+    pub fn is_archived(&self) -> bool {
+        matches!(self, ReadResult::Archived)
+    }
+}
 
 /// Random-access reader. Thread-confined (`!Send + !Sync`).
 pub struct IndexedReader {
@@ -32,10 +66,11 @@ impl IndexedReader {
 
     /// Read the entry at the given index.
     ///
-    /// Returns `Ok(Some(Message))` if the entry exists,
-    /// `Ok(None)` if not yet written or archived,
+    /// Returns `Ok(ReadResult::Available(Message))` if the entry exists,
+    /// `Ok(ReadResult::EndOfStream)` if it is not yet written,
+    /// `Ok(ReadResult::Archived)` if it is below the queue's start index,
     /// `Err(MapTimedOut)` on mapping timeout.
-    pub fn read(&mut self, index: i64) -> Result<Option<Message<'_>>, MmapError> {
+    pub fn read(&mut self, index: i64) -> Result<ReadResult<Message<'_>>, MmapError> {
         let ctx = &mut self.ctx;
         // SAFETY: The owned reader and retained runtime are live. The exclusive reader borrow
         // prevents another read/close while C fills ctx or while the returned message is used.
@@ -43,19 +78,20 @@ impl IndexedReader {
             ffi::mmapq_indexed_reader_read(self.inner, index, ctx);
         }
         match ctx.status {
-            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(Some(Message {
+            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(ReadResult::Available(Message {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::MMAPQ_ENTRY_END_OF_STREAM | ffi::MMAPQ_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_ENTRY_END_OF_STREAM => Ok(ReadResult::EndOfStream),
+            ffi::MMAPQ_ENTRY_ARCHIVED => Ok(ReadResult::Archived),
             // SAFETY: The preceding read left a live handle; last_error only returns its error code.
             ffi::MMAPQ_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
 
-    /// Read the first unarchived entry (at start_index).
-    pub fn read_first(&mut self) -> Result<Option<Message<'_>>, MmapError> {
+    /// Read the first unarchived entry (at start_index). Outcomes as for [`read`](Self::read).
+    pub fn read_first(&mut self) -> Result<ReadResult<Message<'_>>, MmapError> {
         let ctx = &mut self.ctx;
         // SAFETY: The owned reader and retained runtime are live. The exclusive reader borrow
         // prevents another read/close while C fills ctx or while the returned message is used.
@@ -63,19 +99,20 @@ impl IndexedReader {
             ffi::mmapq_indexed_reader_read_first(self.inner, ctx);
         }
         match ctx.status {
-            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(Some(Message {
+            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(ReadResult::Available(Message {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::MMAPQ_ENTRY_END_OF_STREAM | ffi::MMAPQ_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_ENTRY_END_OF_STREAM => Ok(ReadResult::EndOfStream),
+            ffi::MMAPQ_ENTRY_ARCHIVED => Ok(ReadResult::Archived),
             // SAFETY: The preceding read left a live handle; last_error only returns its error code.
             ffi::MMAPQ_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
         }
     }
 
-    /// Read the last committed entry.
-    pub fn read_last(&mut self) -> Result<Option<Message<'_>>, MmapError> {
+    /// Read the last committed entry. Outcomes as for [`read`](Self::read).
+    pub fn read_last(&mut self) -> Result<ReadResult<Message<'_>>, MmapError> {
         let ctx = &mut self.ctx;
         // SAFETY: The owned reader and retained runtime are live. The exclusive reader borrow
         // prevents another read/close while C fills ctx or while the returned message is used.
@@ -83,11 +120,12 @@ impl IndexedReader {
             ffi::mmapq_indexed_reader_read_last(self.inner, ctx);
         }
         match ctx.status {
-            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(Some(Message {
+            ffi::MMAPQ_ENTRY_AVAILABLE => Ok(ReadResult::Available(Message {
                 ctx,
                 _phantom: PhantomData,
             })),
-            ffi::MMAPQ_ENTRY_END_OF_STREAM | ffi::MMAPQ_ENTRY_ARCHIVED => Ok(None),
+            ffi::MMAPQ_ENTRY_END_OF_STREAM => Ok(ReadResult::EndOfStream),
+            ffi::MMAPQ_ENTRY_ARCHIVED => Ok(ReadResult::Archived),
             // SAFETY: The preceding read left a live handle; last_error only returns its error code.
             ffi::MMAPQ_ENTRY_ERROR => Err(map_rc(unsafe { ffi::mmapq_indexed_reader_last_error(self.inner) })),
             _ => Err(MmapError::Corrupt("unknown entry status".into())),
@@ -186,12 +224,13 @@ mod tests {
     use crate::queue::QueueConfig;
     use crate::runtime::Runtime;
     use crate::types::EntryStatus;
-    use crate::IndexedQueue;
+    use crate::{IndexedQueue, ReadResult};
 
-    /// POLL-ARCH-01 (outcome level): an index below a moved start_index
-    /// reads as `Ok(None)` (the documented ARCHIVED/END_OF_STREAM collapse
-    /// on read()) and `entry_status` reports `EntryStatus::Archived`. The
-    /// mid-call race is pinned in C (`test/test_poll_arch_pins.c`); the
+    /// POLL-ARCH-01 (outcome level), E3: an index below a moved start_index
+    /// reads as `ReadResult::Archived` — distinct from `EndOfStream` for an
+    /// index not yet written — and `entry_status` reports
+    /// `EntryStatus::Archived`. The mid-call race is pinned in C
+    /// (`test/test_poll_arch_pins.c`); the
     /// Rust crate builds the C mirror without test hooks by owner ruling,
     /// so this is the outcome-level pin: archive past the index, then
     /// read/entry_status it.
@@ -214,12 +253,29 @@ mod tests {
             a.append(b"m1").unwrap();
         }
         let mut r = q.create_reader().unwrap();
-        assert!(r.read(0).unwrap().is_some());
+        assert_eq!(r.read(0).unwrap().available().unwrap().data(), b"m0");
+        assert!(matches!(r.read(2).unwrap(), ReadResult::EndOfStream)); // not yet written
         let mut arch = q.create_archiver().unwrap();
         arch.archive_up_to_index(1).unwrap();
         drop(arch);
         assert_eq!(r.entry_status(0), EntryStatus::Archived);
-        assert!(r.read(0).unwrap().is_none());
-        assert!(r.read(1).unwrap().is_some()); // above the line, still readable
+        let below = r.read(0).unwrap();
+        assert!(below.is_archived());
+        assert!(matches!(below, ReadResult::Archived));
+        assert!(matches!(r.read_first().unwrap(), ReadResult::Available(m) if m.index() == 1));
+        assert_eq!(r.read(1).unwrap().available().unwrap().data(), b"m1"); // above the line, still readable
+        assert!(matches!(r.read(2).unwrap(), ReadResult::EndOfStream)); // still not written, not archived
+    }
+
+    /// E3: `available()` keeps only the entry; `is_archived()` is true only
+    /// for `Archived`.
+    #[test]
+    fn test_read_result_helpers() {
+        assert_eq!(ReadResult::Available(7).available(), Some(7));
+        assert_eq!(ReadResult::<i32>::EndOfStream.available(), None);
+        assert_eq!(ReadResult::<i32>::Archived.available(), None);
+        assert!(ReadResult::<i32>::Archived.is_archived());
+        assert!(!ReadResult::<i32>::EndOfStream.is_archived());
+        assert!(!ReadResult::Available(7).is_archived());
     }
 }

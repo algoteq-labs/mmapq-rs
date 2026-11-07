@@ -11,7 +11,7 @@ fn batch_export_preserves_corruption_when_close_also_fails() {
     let mut appender = queue.create_appender().unwrap();
     let index = appender.append_and_commit(b"message").unwrap();
     let mut reader = queue.create_reader().unwrap();
-    let offset = reader.read(index).unwrap().unwrap().batch_offset();
+    let offset = reader.read(index).unwrap().available().unwrap().batch_offset();
     let payload = std::fs::OpenOptions::new().write(true)
         .open(directory.join("batch").join(format!("payload_{}_0", appender.id()))).unwrap();
     payload.write_all_at(&0_i32.to_le_bytes(), offset as u64 + 4).unwrap();
