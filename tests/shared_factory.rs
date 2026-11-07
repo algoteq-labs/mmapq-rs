@@ -1,3 +1,4 @@
+use std::panic::{catch_unwind, resume_unwind, AssertUnwindSafe};
 use std::sync::{Arc, Barrier};
 
 use mmapq::{IndexedQueue, NextMove, PollResult, QueueConfig, Runtime, RuntimeConfig};
@@ -25,12 +26,19 @@ fn shared_factory_participants_discover_late_metadata() {
             let ready = Arc::clone(&ready);
             let published = Arc::clone(&published);
             workers.push(std::thread::spawn(move || {
-                let mut reader = queue.create_reader().unwrap();
-                let mut poller = queue.create_poller().unwrap();
-                assert!(matches!(reader.read(17).unwrap(), mmapq::ReadResult::EndOfStream));
-                assert_eq!(poller.poll(|_, _, _| panic!("not published")).unwrap(), PollResult::EndOfStream);
+                // A panic before the barriers would leave the main thread and
+                // the other workers waiting forever; catch it, reach both
+                // barriers, then re-raise it so the test fails instead of hanging.
+                let before = catch_unwind(AssertUnwindSafe(|| {
+                    let mut reader = queue.create_reader().unwrap();
+                    let mut poller = queue.create_poller().unwrap();
+                    assert!(matches!(reader.read(17).unwrap(), mmapq::ReadResult::EndOfStream));
+                    assert_eq!(poller.poll(|_, _, _| panic!("not published")).unwrap(), PollResult::EndOfStream);
+                    (reader, poller)
+                }));
                 ready.wait();
                 published.wait();
+                let (mut reader, mut poller) = before.unwrap_or_else(|panic| resume_unwind(panic));
                 assert_eq!(reader.start_index(), 17);
                 assert_eq!(reader.read(17).unwrap().available().unwrap().data(), b"seed");
                 assert_eq!(poller.poll(|index, _, payload| {
