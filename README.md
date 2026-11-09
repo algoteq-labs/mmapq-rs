@@ -13,8 +13,7 @@ and a consumer can resume from an index saved by its application. These
 bindings wrap the C library; the zero-copy limitations below require care
 in the current release.
 
-This library was extracted from production trading infrastructure, where
-its Java ancestor carried FX flows for years. The design target is the
+The design target is the
 storage layer for **event-sourced systems**: sequenced command queues,
 replicated event logs, and deterministic replay. For that architecture, see
 `doc/guide/event-sourcing.md` in the [mmapq](https://github.com/algoteq-labs/mmapq)
@@ -264,7 +263,7 @@ rule, the unified tail rule). To move 0.1.0 data forward, export with a
 format is unchanged. Each release states the schema versions it reads; a
 file of any other version is refused at open. A version change is always
 a clean refusal, never a silent misread. The feature set is frozen and
-the API grows only to complete parity with the Algoteq Java reference —
+the API grows only for capability already present in the C core —
 a design position: the library you audit today is the library you run in
 five years.
 

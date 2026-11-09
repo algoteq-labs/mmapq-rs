@@ -10,9 +10,8 @@
 //! rejoin. Not committing an offset skips it.
 //!
 //! The `&mut IndexedAppender` borrow enforces the no-append-while-iterating
-//! rule at compile time (C documents it; the Java runtime liveness check is
-//! the rule's origin). Archiving may remove messages the walk has not
-//! reached, even after an undo; a zero archive line means a corrupt
+//! rule at compile time (C documents it). Archiving may remove messages the walk
+//! has not reached, even after an undo; a zero archive line means a corrupt
 //! appender meta (pre-0.2.0 queues are refused at open with
 //! `SchemaMismatch`).
 

@@ -34,8 +34,7 @@ file governs conduct; that file governs design.
    explicitly requests them. Useful higher-level functionality belongs in
    separate projects, never here. If a task seems to need a new public API,
    stop and ask.
-   *Sole exception: completing parity with the Algoteq Java surface (the
-   tools4j-derived reference implementation) for capability that already
+   *Sole exception: completing the public API for capability that already
    exists on disk, and only by explicit task.*
 
 2. **Never change the on-disk layout.** Byte offsets, file sizes, file
@@ -174,7 +173,7 @@ diff -r include ../mmapq-rs/c/include
 
 Exit code zero or the task is not done. Do not hand-eye it.
 
-## Scope of the C port (do not "fix" these)
+## Scope of this implementation (do not "fix" these)
 
 - `archivable` is a creation-time factory parameter (default 0). Existing
   queues keep their on-disk value on reopen. Archivable reads pay an
