@@ -1,0 +1,161 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Release checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout mmapq-rs (committed gitlink, full history)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; version set by toolchain input
+        with:
+          toolchain: 1.99.1
+      - name: Check, verify and smoke-test the packaged crate
+        run: bash scripts/check_package.sh
+      - name: Tag coherence checks
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${GITHUB_REF_NAME}"
+          V="${TAG#v}"
+          fail() { echo "tag-coherence: $1"; exit 1; }
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "not X.Y.Z: $V"
+          PKG=$(cargo metadata --no-deps --format-version 1 \
+              | python3 -I -c 'import json, sys
+          pkgs = json.load(sys.stdin)["packages"]
+          print(next(p["version"] for p in pkgs if p["name"] == "mmapq"))')
+          [ "$PKG" = "$V" ] || fail "package $PKG != tag $V"
+          HDR=$(sed -n 's/^#define MMAPQ_VERSION_STR "\(.*\)"$/\1/p' c/include/mmap_platform.h)
+          [ "$HDR" = "$V" ] || fail "MMAPQ_VERSION_STR \"$HDR\" != tag $V"
+          git -C c fetch --no-tags origin "refs/tags/$TAG:refs/tags/$TAG"
+          TAGC=$(git -C c rev-parse "$TAG^{commit}")
+          HEADC=$(git -C c rev-parse HEAD)
+          [ "$TAGC" = "$HEADC" ] || fail "gitlink $HEADC is not the mmapq tag $TAG ($TAGC)"
+          git merge-base --is-ancestor HEAD origin/main \
+              || fail "wrapper commit is not on main"
+          if [ "$(git -C c rev-parse --is-shallow-repository)" = "true" ]; then
+              git -C c fetch --no-tags --unshallow origin
+          fi
+          git -C c fetch --no-tags origin main:refs/remotes/origin/main
+          git -C c merge-base --is-ancestor HEAD origin/main \
+              || fail "mmapq commit is not on main"
+          echo "tag coherence OK: $TAG"
+
+  publish:
+    name: Publish to crates.io
+    needs: check
+    environment: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout mmapq-rs (committed gitlink)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; version set by toolchain input
+        with:
+          toolchain: 1.99.1
+      - name: Exchange OIDC token for a crates.io registry token
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+        id: auth
+      - name: cargo publish
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$GITHUB_REF" in refs/tags/v*) ;; *) echo "guard: not a v* tag: $GITHUB_REF"; exit 1;; esac
+          V="${GITHUB_REF_NAME#v}"
+          [[ "$V" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "guard: not X.Y.Z: $V"; exit 1; }
+          PKG=$(cargo metadata --no-deps --format-version 1 \
+              | python3 -I -c 'import json, sys
+          pkgs = json.load(sys.stdin)["packages"]
+          print(next(p["version"] for p in pkgs if p["name"] == "mmapq"))')
+          [ "$PKG" = "$V" ] || { echo "guard: package $PKG != tag $V"; exit 1; }
+          cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+      - name: cargo publish dry run (rehearsal)
+        if: github.event_name == 'workflow_dispatch'
+        run: cargo publish --dry-run --locked
+
+  registry-smoke:
+    name: Smoke-test the published crate
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout mmapq-rs (committed gitlink)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+          persist-credentials: false
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; version set by toolchain input
+        with:
+          toolchain: 1.99.1
+      - name: Wait for the version in the crates.io index, then smoke-test it
+        shell: bash
+        run: |
+          set -euo pipefail
+          V="${GITHUB_REF_NAME#v}"
+          for i in $(seq 1 10); do
+              if cargo info "mmapq@${V}" > /dev/null 2>&1; then
+                  break
+              fi
+              if [ "$i" -eq 10 ]; then
+                  echo "registry-smoke: mmapq@${V} not in the crates.io index after 10 tries"
+                  exit 1
+              fi
+              sleep 30
+          done
+          tmp="$RUNNER_TEMP/consumer"
+          mkdir -p "$tmp/src"
+          {
+              echo '[package]'
+              echo 'name = "mmapq-package-smoke"'
+              echo 'version = "0.0.0"'
+              echo 'edition = "2021"'
+              echo 'publish = false'
+              echo
+              echo '[workspace]'
+              echo
+              echo '[dependencies]'
+              echo "mmapq = \"=${V}\""
+          } > "$tmp/Cargo.toml"
+          cp scripts/package_smoke_main.rs "$tmp/src/main.rs"
+          if ! cargo run --quiet --manifest-path "$tmp/Cargo.toml" \
+                  > "$tmp/smoke.out" 2> "$tmp/smoke.err"; then
+              echo "registry-smoke: consumer build/run failed"
+              echo "--- stdout ---"; cat "$tmp/smoke.out"
+              echo "--- stderr ---"; cat "$tmp/smoke.err"
+              exit 1
+          fi
+          [ "$(cat "$tmp/smoke.out")" = "smoke ok" ] \
+              || { echo "registry-smoke: unexpected output: $(cat "$tmp/smoke.out")"; exit 1; }
+          echo "registry-smoke: smoke ok (mmapq@${V})"
