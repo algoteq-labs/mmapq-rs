@@ -43,6 +43,9 @@ fn verify_batch(dest: &Path, expected_si: i64, expected_li: i64) {
     drop(q);
 }
 
+// covers: QueueTransfer::export
+// covers: QueueTransfer::import
+// covers: IndexedAppender::current_index
 #[test]
 fn test_export_import_roundtrip() {
     let (q_src, src_dir) = create_queue("xfer_roundtrip");
@@ -83,6 +86,7 @@ fn test_export_preserve() {
     verify_normal(&dest, 0, 0);
 }
 
+// covers: IndexedReader::start_index
 #[test]
 fn test_import_preserve() {
     let (q_src, src_dir) = create_queue("import_preserve");
@@ -136,6 +140,7 @@ fn test_import_allow_append_true() {
     assert_eq!(n, 1);
 }
 
+// covers: QueueTransfer::copy
 #[test]
 fn test_copy_roundtrip() {
     let (q_src, _src_dir) = create_queue("copy_roundtrip");
@@ -183,6 +188,8 @@ fn test_copy_allow_append() {
     drop(r); drop(q_src);
 }
 
+// covers: BatchQueueTransfer::export
+// covers: BatchQueueTransfer::import
 #[test]
 fn test_batch_export_import_roundtrip() {
     let (q_src, src_dir) = create_batch_queue("batch_xfer");
@@ -235,6 +242,7 @@ fn test_batch_import_preserve() {
     assert_eq!(n, 1);
 }
 
+// covers: BatchQueueTransfer::copy
 #[test]
 fn test_batch_copy_roundtrip() {
     let (q_src, _src_dir) = create_batch_queue("batch_copy");
@@ -249,6 +257,7 @@ fn test_batch_copy_roundtrip() {
     drop(r); drop(q_src);
 }
 
+// covers: IndexedBatchReader::start_index
 #[test]
 fn test_batch_copy_preserve() {
     let (q_src, _src_dir) = create_batch_queue("batch_copy_preserve");
@@ -265,6 +274,7 @@ fn test_batch_copy_preserve() {
     drop(r); drop(q_src);
 }
 
+// covers: QueueTransfer::copy_from_batch
 #[test]
 fn test_copy_batch_to_normal() {
     let (bq_src, _src_dir) = create_batch_queue("b2n");
@@ -295,6 +305,7 @@ fn test_copy_batch_to_normal_preserve() {
     drop(r); drop(bq_src);
 }
 
+// covers: BatchQueueTransfer::copy_from_normal
 #[test]
 fn test_copy_normal_to_batch() {
     let (q_src, _src_dir) = create_queue("n2b");
@@ -329,6 +340,7 @@ fn test_copy_normal_to_batch_preserve() {
 
 // ── Cross-type PRESERVE with non-zero start_index ─────────────────────────
 
+// covers: IndexedBatchReader::last_index
 #[test]
 fn test_copy_batch_to_normal_preserve_nonzero() {
     let dir = std::env::temp_dir().join("mmap-rs-transfer-test").join("b2n_nonzero");
@@ -385,6 +397,7 @@ fn test_copy_normal_to_batch_preserve_nonzero() {
     drop(r); drop(q);
 }
 
+// covers: QueueTransfer::import_from_batch
 #[test]
 fn test_import_batch_stream_preserve_nonzero() {
     let dir = std::env::temp_dir().join("mmap-rs-transfer-test").join("rust_ibs_nonzero");
@@ -413,6 +426,7 @@ fn test_import_batch_stream_preserve_nonzero() {
     verify_normal(&dest, 100, 100);
 }
 
+// covers: BatchQueueTransfer::import_from_flat
 #[test]
 fn test_import_flat_to_batch_preserve_nonzero() {
     let dir = std::env::temp_dir().join("mmap-rs-transfer-test").join("rust_ifb_nonzero");
@@ -444,6 +458,8 @@ fn test_import_flat_to_batch_preserve_nonzero() {
 
 // ── Appender ID preservation tests ────────────────────────────────────────
 
+// covers: IndexedAppender::id
+// covers: Message::appender_id
 #[test]
 fn test_import_preserves_appender_ids() {
     let (q_src, src_dir) = create_queue("aid_preserve");
@@ -583,6 +599,7 @@ fn test_import_abort_on_conflict() {
     drop(q_dest);
 }
 
+// covers: IndexedBatchReader::appender_id
 #[test]
 fn test_batch_import_preserves_appender_ids() {
     let (q_src, src_dir) = create_batch_queue("batch_aid");

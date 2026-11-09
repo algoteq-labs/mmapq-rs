@@ -282,6 +282,7 @@ mod tests {
         assert_eq!(result, PollResult::EndOfStream);
     }
 
+    // covers: IndexedPoller::poll
     #[test]
     fn test_poll_one_message() {
         let (q, mut p, _rt) = setup("test_poll_one");

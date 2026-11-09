@@ -271,12 +271,14 @@ impl IdleStrategy {
 mod tests {
     use super::*;
 
+    // covers: Runtime::region_mapper
     #[test]
     fn test_region_mapper_non_null() {
         let rt = Runtime::region_mapper().expect("region_mapper should succeed");
         assert!(!rt.as_ptr().is_null(), "runtime pointer should be non-null");
     }
 
+    // covers: Runtime::metrics_processor
     #[test]
     fn test_metrics_processor_non_null() {
         let rt = Runtime::metrics_processor().expect("metrics_processor should succeed");
@@ -292,6 +294,10 @@ mod tests {
         assert!(!cloned.is_closed(), "cloned runtime should still be open");
     }
 
+    // covers: Runtime::new
+    // covers: RuntimeConfig::new
+    // covers: RuntimeConfig::name
+    // covers: RuntimeConfig::idle_strategy
     #[test]
     fn test_runtime_create_and_drop() {
         let config = RuntimeConfig::new()
@@ -303,6 +309,7 @@ mod tests {
         // No crash on drop — verifies mmapq_runtime_destroy works
     }
 
+    // covers: Runtime::is_closed
     #[test]
     fn test_runtime_is_closed() {
         let rt = Runtime::region_mapper().unwrap();
@@ -312,6 +319,7 @@ mod tests {
     /// C rejects a CPU index cpu_set_t cannot encode with MMAPQ_EINVAL;
     /// the binding must surface it as InvalidArgument, not Internal.
     /// u32::MAX also covers the `as i32` wrap to a negative index.
+    // covers: Runtime::set_affinity
     #[test]
     fn test_set_affinity_out_of_range_is_invalid_argument() {
         let rt = Runtime::region_mapper().unwrap();

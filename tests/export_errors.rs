@@ -3,6 +3,7 @@ use mmapq::batch::IndexedBatchQueue;
 use mmapq::transfer::{BatchQueueTransfer, QueueTransfer, StartIndexMode};
 use std::os::unix::fs::FileExt;
 
+// covers: IndexedBatchAppender::append_and_commit
 #[test]
 fn batch_export_preserves_corruption_when_close_also_fails() {
     let directory = std::env::temp_dir().join(format!("mmapq-export-corruption-{}", std::process::id()));

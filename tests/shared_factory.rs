@@ -3,6 +3,14 @@ use std::sync::{Arc, Barrier};
 
 use mmapq::{IndexedQueue, NextMove, PollResult, QueueConfig, Runtime, RuntimeConfig};
 
+// covers: QueueConfig::new
+// covers: QueueConfig::region_size
+// covers: QueueConfig::ring_size
+// covers: QueueConfig::max_file_size
+// covers: QueueConfig::start_index
+// covers: QueueConfig::write_runtime
+// covers: QueueConfig::read_runtime
+// covers: IndexedQueue::create_appender_with_id
 #[test]
 fn shared_factory_participants_discover_late_metadata() {
     for asynchronous in [false, true] {

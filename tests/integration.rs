@@ -127,6 +127,8 @@ fn test_single_process_multiple_appenders() {
     assert!(received.contains(&"from-a2-again".to_string()));
 }
 
+// covers: IndexedPoller::move_to_index
+// covers: IndexedQueue::create_poller
 #[test]
 fn test_single_process_move_to_index() {
     let (q, _rt) = setup_queue("int_move_to");
@@ -150,6 +152,7 @@ fn test_single_process_move_to_index() {
     assert_eq!(result, PollResult::Advanced);
 }
 
+// covers: IndexedReader::last_index
 #[test]
 fn test_reader_metadata() {
     let (q, _rt) = setup_queue("int_reader_meta");

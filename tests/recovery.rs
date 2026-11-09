@@ -42,6 +42,8 @@ fn setup_batch(name: &str) -> (IndexedBatchQueue, Runtime) {
 /// Mirrors test_uncommitted_iterator_finds_uncommitted: one committed, one
 /// uncommitted; the iterator yields exactly the uncommitted one, with its
 /// exact offset and bytes; after commit it yields nothing.
+// covers: IndexedAppender::uncommitted_iter
+// covers: UncommittedIter::next
 #[test]
 fn uncommitted_iter_finds_uncommitted() {
     let (q, _rt) = setup_single("single_finds_uncommitted");
@@ -134,6 +136,8 @@ fn uncommitted_iter_rejoin_and_commit_validation() {
 /// The staged path: complete_uncommitted stages without publishing;
 /// commit_batch publishes by offset (the gap fix — the staged/recovered
 /// commit path).
+// covers: BatchWriter::complete_uncommitted
+// covers: IndexedBatchAppender::commit_batch
 #[test]
 fn batch_complete_uncommitted_then_commit_batch() {
     let (q, _rt) = setup_batch("batch_staged_commit");
@@ -181,6 +185,8 @@ fn batch_complete_uncommitted_then_commit_batch() {
 /// A discarded batch is final in-session (commit_batch EINVAL) but reappears
 /// in recovery after a restart — the walker reports it and refill makes it
 /// committable; recovery code decides (owner ruling 8).
+// covers: IndexedBatchAppender::uncommitted_batches
+// covers: UncommittedBatches::next
 #[test]
 fn discarded_batch_reappears_in_recovery() {
     let (q, _rt) = setup_batch("batch_discard_recovery");
@@ -220,6 +226,7 @@ fn discarded_batch_reappears_in_recovery() {
 /// to staged at the rejoin; join_completed_open_batch reports it once
 /// (read-and-clear) and the walker yields it.
 /// Mirrors test_batch_de_mode2_rejoin_completes_open_batch.
+// covers: IndexedBatchAppender::join_completed_open_batch
 #[test]
 fn rejoin_completes_open_batch() {
     let (q, _rt) = setup_batch("batch_join_completion");
@@ -344,6 +351,7 @@ fn batch_commit_out_of_order_multi_legal() {
 /// Batch archiver forward + undo through the wrapper: archiving advances
 /// the read boundary (poll below it → Archived), undo restores it.
 /// (reclaim_files has no wrapper binding — C-only for both queue types.)
+// covers: IndexedBatchArchiver::archivable_files
 #[test]
 fn batch_archiver_forward_and_undo() {
     let (q, _rt) = setup_batch_archivable("batch_archiver_forward_undo");

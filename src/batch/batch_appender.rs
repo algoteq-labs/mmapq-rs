@@ -300,6 +300,9 @@ mod tests {
     use crate::runtime::Runtime;
     use crate::error::MmapError;
 
+    // covers: IndexedBatchQueue::create_appender
+    // covers: IndexedBatchAppender::start_batch
+    // covers: BatchWriter::append
     #[test]
     fn test_batch_append_rejects_oversized_message() {
         let rt = Runtime::region_mapper().unwrap();
@@ -328,5 +331,64 @@ mod tests {
         drop(a);
         drop(q);
         drop(rt);
+    }
+
+    /// append_remaining_from (the raw-iterator form) copies every message
+    /// from the cursor's current position: after stepping past "s0" it
+    /// appends exactly the remaining two, and the destination reads them
+    /// back. as_raw_iterator supplies the raw C cursor for the call.
+    // covers: BatchWriter::append_remaining_from
+    // covers: BatchMessageIter::as_raw_iterator
+    #[test]
+    fn test_batch_append_remaining_from_raw_iterator() {
+        let rt = Runtime::region_mapper().unwrap();
+        let src_dir = std::env::temp_dir().join("mmap-rs-test-batch-appender").join("remaining_src");
+        let dst_dir = std::env::temp_dir().join("mmap-rs-test-batch-appender").join("remaining_dst");
+        let _ = std::fs::remove_dir_all(&src_dir);
+        let _ = std::fs::remove_dir_all(&dst_dir);
+        std::fs::create_dir_all(&src_dir).expect("create src dir");
+        std::fs::create_dir_all(&dst_dir).expect("create dst dir");
+        let cfg = |dir: &std::path::Path| {
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt)
+        };
+        let src = IndexedBatchQueue::create(cfg(&src_dir)).unwrap();
+        {
+            let mut a = src.create_appender().unwrap();
+            let mut w = a.start_batch().unwrap();
+            w.append(b"s0").unwrap();
+            w.append(b"s1").unwrap();
+            w.append(b"s2").unwrap();
+            assert_eq!(w.commit().unwrap(), 0);
+        }
+        let dst = IndexedBatchQueue::create(cfg(&dst_dir)).unwrap();
+
+        let mut r = src.create_reader().unwrap();
+        let mut msg = r.read(0).unwrap().available().expect("batch exists");
+        let mut cursor = msg.iter();
+        let (first, _) = cursor.next().unwrap().expect("first message");
+        assert_eq!(first, b"s0");
+
+        let mut a = dst.create_appender().unwrap();
+        let mut w = a.start_batch().unwrap();
+        // SAFETY: cursor is live and exclusively borrowed for the duration
+        // of this expression; no payload slices are outstanding (first was
+        // last used above), and the raw C cursor is not advanced by anyone
+        // else — the destination writer copies source payloads before the
+        // source cursor advances.
+        let n = w.append_remaining_from(unsafe { &mut *cursor.as_raw_iterator() }).unwrap();
+        assert_eq!(n, 2, "the remaining two messages after stepping past s0");
+        assert_eq!(w.commit().unwrap(), 0);
+        drop(cursor);
+        drop(msg);
+        drop(r);
+
+        let mut r_dst = dst.create_reader().unwrap();
+        let mut got = r_dst.read(0).unwrap().available().expect("copied batch exists");
+        assert_eq!(got.message_count(), 2);
+        let mut it = got.iter();
+        assert_eq!(it.next().unwrap().unwrap().0, b"s1");
+        assert_eq!(it.next().unwrap().unwrap().0, b"s2");
     }
 }

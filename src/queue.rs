@@ -399,3 +399,75 @@ impl Default for QueueConfig {
         QueueConfig::new(std::env::temp_dir().to_str().unwrap(), "default")
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::QueueConfig;
+    use crate::runtime::Runtime;
+
+    // covers: QueueConfig::directory
+    // covers: QueueConfig::queue_name
+    // covers: QueueConfig::timeout
+    // covers: QueueConfig::regions_to_map_ahead
+    // covers: QueueConfig::both_runtimes
+    // covers: QueueConfig::get_region_size
+    // covers: QueueConfig::get_ring_size
+    // covers: QueueConfig::get_regions_to_map_ahead
+    // covers: QueueConfig::get_max_file_size
+    // covers: QueueConfig::get_start_index
+    // covers: QueueConfig::get_timeout
+    // covers: QueueConfig::get_archivable
+    // covers: QueueConfig::get_write_runtime
+    // covers: QueueConfig::take_write_runtime
+    // covers: QueueConfig::get_read_runtime
+    // covers: QueueConfig::take_read_runtime
+    #[test]
+    fn config_setters_getters_and_runtime_slots_round_trip() {
+        let rt = Runtime::region_mapper().unwrap();
+        let mut cfg = QueueConfig::new("/tmp/mmap-rs-cfg-dir", "cfg-queue");
+        assert_eq!(cfg.directory(), "/tmp/mmap-rs-cfg-dir");
+        assert_eq!(cfg.queue_name(), "cfg-queue");
+
+        // Documented defaults, asserted exactly.
+        assert_eq!(cfg.get_region_size(), 4096 * 1024);
+        assert_eq!(cfg.get_ring_size(), 4);
+        assert_eq!(cfg.get_regions_to_map_ahead(), 1);
+        assert_eq!(cfg.get_max_file_size(), (4096 * 1024) as i64 * 256);
+        assert_eq!(cfg.get_start_index(), 0);
+        assert_eq!(cfg.get_timeout(), 10_000_000_000);
+        assert!(!cfg.get_archivable());
+
+        // Every setter round-trips through its getter.
+        cfg = cfg.region_size(8192);
+        assert_eq!(cfg.get_region_size(), 8192);
+        cfg = cfg.ring_size(6);
+        assert_eq!(cfg.get_ring_size(), 6);
+        cfg = cfg.regions_to_map_ahead(3);
+        assert_eq!(cfg.get_regions_to_map_ahead(), 3);
+        cfg = cfg.max_file_size(1 << 20);
+        assert_eq!(cfg.get_max_file_size(), 1 << 20);
+        cfg = cfg.start_index(7);
+        assert_eq!(cfg.get_start_index(), 7);
+        cfg = cfg.timeout(123_456);
+        assert_eq!(cfg.get_timeout(), 123_456);
+        cfg = cfg.archivable(true);
+        assert!(cfg.get_archivable());
+
+        // Runtime slots: set, read back, take. Taking empties the slot.
+        cfg = cfg.write_runtime(&rt);
+        assert!(cfg.get_write_runtime().is_some());
+        assert!(cfg.take_write_runtime().is_some());
+        assert!(cfg.get_write_runtime().is_none());
+        assert!(cfg.take_write_runtime().is_none());
+
+        cfg = cfg.read_runtime(&rt);
+        assert!(cfg.get_read_runtime().is_some());
+        assert!(cfg.take_read_runtime().is_some());
+        assert!(cfg.get_read_runtime().is_none());
+        assert!(cfg.take_read_runtime().is_none());
+
+        cfg = cfg.both_runtimes(&rt);
+        assert!(cfg.get_write_runtime().is_some());
+        assert!(cfg.get_read_runtime().is_some());
+    }
+}

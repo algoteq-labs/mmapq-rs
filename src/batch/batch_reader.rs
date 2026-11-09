@@ -216,6 +216,15 @@ mod tests {
     /// pin: archive past the batch index, then read/entry_status it.
     /// (The batch poller's ARCHIVED surface is already pinned in
     /// `tests/recovery.rs::test_batch_archiver_forward_and_undo`.)
+    // covers: IndexedBatchQueue::create_reader
+    // covers: IndexedBatchQueue::create_archiver
+    // covers: IndexedBatchArchiver::archive_up_to_index
+    // covers: IndexedBatchReader::read
+    // covers: IndexedBatchReader::read_first
+    // covers: IndexedBatchReader::entry_status
+    // covers: BatchMessage::index
+    // covers: BatchMessage::message_count
+    // covers: BatchMessage::iter
     #[test]
     fn test_batch_read_archived_below_moved_start_index() {
         let rt = Runtime::region_mapper().unwrap();
@@ -251,5 +260,35 @@ mod tests {
         let mut above = r.read(1).unwrap().available().unwrap(); // above the line, still readable
         assert_eq!(above.iter().next().unwrap().unwrap().0, b"m1");
         assert!(matches!(r.read(2).unwrap(), ReadResult::EndOfStream)); // still not written, not archived
+    }
+
+    /// read_last delivers the newest batch with its exact metadata.
+    // covers: IndexedBatchReader::read_last
+    #[test]
+    fn test_batch_read_last() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-batch-reader").join("read_last");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = IndexedBatchQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        {
+            let mut a = q.create_appender().unwrap();
+            for i in 0..3 {
+                let msg = format!("bm{i}");
+                let mut w = a.start_batch().unwrap();
+                w.append(msg.as_bytes()).unwrap();
+                assert_eq!(w.commit().unwrap(), i);
+            }
+        }
+        let mut r = q.create_reader().unwrap();
+        let mut b = r.read_last().unwrap().available().expect("last batch exists");
+        assert_eq!(b.index(), 2);
+        assert_eq!(b.message_count(), 1);
+        assert_eq!(b.iter().next().unwrap().unwrap().0, b"bm2");
     }
 }

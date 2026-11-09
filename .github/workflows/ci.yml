@@ -38,3 +38,5 @@ jobs:
           find c -name 'libmmapq.a' -delete
       - name: cargo test
         run: cargo test --no-fail-fast
+      - name: Binding coverage gate (every public binding method directly tested)
+        run: bash c/scripts/check_binding_coverage.sh --rust .

@@ -197,6 +197,7 @@ mod tests {
         drop(q);
     }
 
+    // covers: IndexedArchiver::print_summary
     #[test]
     fn test_archiver_print_summary() {
         let (q, _a, _p, _rt) = setup("test_arch_summary");
@@ -209,4 +210,41 @@ mod tests {
 
     // archivable_files test removed: requires archivable=1 meta which is not
     // exposed through the public Rust API. Tested in C (test_indexed_archiver.c).
+
+    /// start_offset reports the lane's deletion boundary: an unused lane is
+    /// None; after archiving five 2-byte entries (6 framed bytes each) the
+    /// used lane's boundary is 64 + 5*6 = 94. Nothing is wholly below it at
+    /// the default geometry, so archivable_files is empty.
+    // covers: IndexedArchiver::start_offset
+    // covers: IndexedArchiver::archivable_files
+    #[test]
+    fn test_archiver_start_offset_and_archivable_files() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-archiver").join("start_offset");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = crate::IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .archivable(true)
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        let used;
+        {
+            let mut a = q.create_appender().unwrap();
+            used = a.id();
+            for i in 0..10 {
+                let msg = format!("m{i}");
+                assert_eq!(a.append(msg.as_bytes()).unwrap(), i);
+            }
+        }
+        let mut arch = q.create_archiver().unwrap();
+        arch.archive_up_to_index(5).unwrap();
+
+        let unused: u8 = if used == 255 { 0 } else { used + 1 };
+        assert_eq!(arch.start_offset(unused).unwrap(), None, "unused lane");
+        assert_eq!(arch.start_offset(used).unwrap(), Some(94), "boundary past five archived entries");
+        assert_eq!(arch.archivable_files().unwrap(), Vec::<String>::new());
+    }
 }

@@ -234,6 +234,16 @@ mod tests {
     /// Rust crate builds the C mirror without test hooks by owner ruling,
     /// so this is the outcome-level pin: archive past the index, then
     /// read/entry_status it.
+    // covers: IndexedQueue::create
+    // covers: IndexedQueue::create_reader
+    // covers: IndexedQueue::create_archiver
+    // covers: IndexedArchiver::archive_up_to_index
+    // covers: IndexedReader::read
+    // covers: IndexedReader::read_first
+    // covers: IndexedReader::entry_status
+    // covers: ReadResult::is_archived
+    // covers: Message::index
+    // covers: Message::data
     #[test]
     fn test_read_archived_below_moved_start_index() {
         let rt = Runtime::region_mapper().unwrap();
@@ -269,6 +279,7 @@ mod tests {
 
     /// E3: `available()` keeps only the entry; `is_archived()` is true only
     /// for `Archived`.
+    // covers: ReadResult::available
     #[test]
     fn test_read_result_helpers() {
         assert_eq!(ReadResult::Available(7).available(), Some(7));
@@ -277,5 +288,39 @@ mod tests {
         assert!(ReadResult::<i32>::Archived.is_archived());
         assert!(!ReadResult::<i32>::EndOfStream.is_archived());
         assert!(!ReadResult::Available(7).is_archived());
+    }
+
+    /// read_last delivers the newest entry; Message accessors report the
+    /// exact payload. as_ptr exposes the raw handle (non-null while open).
+    // covers: IndexedReader::read_last
+    // covers: IndexedReader::as_ptr
+    // covers: Message::length
+    // covers: Message::to_vec
+    #[test]
+    fn test_read_last_and_message_accessors() {
+        let rt = Runtime::region_mapper().unwrap();
+        let dir = std::env::temp_dir().join("mmap-rs-test-reader").join("read_last");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("create base dir");
+        let q = IndexedQueue::create(
+            QueueConfig::new(dir.to_str().unwrap(), "q")
+                .write_runtime(&rt)
+                .read_runtime(&rt),
+        )
+        .unwrap();
+        {
+            let mut a = q.create_appender().unwrap();
+            for i in 0..5 {
+                let msg = format!("msg{i}");
+                assert_eq!(a.append(msg.as_bytes()).unwrap(), i);
+            }
+        }
+        let mut r = q.create_reader().unwrap();
+        assert!(!r.as_ptr().is_null(), "open reader has a live handle");
+        let msg = r.read_last().unwrap().available().expect("last entry exists");
+        assert_eq!(msg.index(), 4);
+        assert_eq!(msg.length(), 4);
+        assert_eq!(msg.data(), b"msg4");
+        assert_eq!(msg.to_vec(), b"msg4".to_vec());
     }
 }

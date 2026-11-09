@@ -26,6 +26,7 @@ fn temp_queue_dir(tag: &str) -> String {
 /// Scenario 1: the user's Runtime binding is dropped while the queue lives.
 /// The queue's stored clones must keep the C runtime alive for participant
 /// creation and appends.
+// covers: RuntimeConfig::close_timeout_ns
 #[test]
 fn queue_outlives_user_runtime_binding() {
     let dir = temp_queue_dir("s1");

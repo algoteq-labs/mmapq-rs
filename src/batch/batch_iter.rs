@@ -122,6 +122,8 @@ mod tests {
     use crate::runtime::Runtime;
     use crate::types::{NextMove, PollResult};
 
+    // covers: IndexedBatchQueue::create
+    // covers: IndexedBatchQueue::create_poller
     #[test]
     fn test_batch_iter_empty_queue_returns_none() {
         let rt = Runtime::region_mapper().unwrap();
@@ -151,6 +153,7 @@ mod tests {
         drop(q);
     }
 
+    // covers: BatchMessageIter::next
     #[test]
     fn test_batch_iter_yields_all_messages() {
         let rt = Runtime::region_mapper().unwrap();

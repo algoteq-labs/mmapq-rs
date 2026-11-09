@@ -100,3 +100,23 @@ pub enum BatchEntryStatus {
     /// A mapping timeout or I/O error occurred.
     Error = 3,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::PollResult;
+
+    // covers: PollResult::from_ffi
+    #[test]
+    fn poll_result_from_ffi_maps_every_code_exactly() {
+        assert_eq!(PollResult::from_ffi(0), PollResult::EndOfStream);
+        assert_eq!(PollResult::from_ffi(1), PollResult::Advanced);
+        assert_eq!(PollResult::from_ffi(2), PollResult::Stopped);
+        assert_eq!(PollResult::from_ffi(3), PollResult::Retreated);
+        assert_eq!(PollResult::from_ffi(4), PollResult::Archived);
+        assert_eq!(PollResult::from_ffi(5), PollResult::Error);
+        assert_eq!(PollResult::from_ffi(6), PollResult::Corrupt);
+        // Codes outside the ABI fold onto Error, never panic.
+        assert_eq!(PollResult::from_ffi(99), PollResult::Error);
+        assert_eq!(PollResult::from_ffi(-1), PollResult::Error);
+    }
+}

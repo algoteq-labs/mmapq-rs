@@ -311,6 +311,7 @@ mod tests {
         assert_eq!(count, 1);
     }
 
+    // covers: IndexedBatchPoller::poll
     #[test]
     fn test_batch_poll_one_message() {
         let (q, mut p, _rt) = setup("test_bpoll_one");

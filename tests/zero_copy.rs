@@ -56,6 +56,16 @@ fn error_construction_does_not_allocate() {
     });
 }
 
+// covers: IndexedBatchQueue::create
+// covers: IndexedBatchQueue::create_appender
+// covers: IndexedBatchQueue::create_appender_with_id
+// covers: IndexedBatchQueue::create_reader
+// covers: BatchWriter::append
+// covers: BatchWriter::append_reserved
+// covers: BatchWriter::commit
+// covers: BatchWriter::append_remaining_from_iter
+// covers: BatchMessage::iter
+// covers: BatchMessage::message_count
 #[test]
 fn region_reuse_and_bulk_copy_preserve_borrowed_payloads() {
     for asynchronous in [false, true] {
@@ -139,6 +149,9 @@ fn region_reuse_and_bulk_copy_preserve_borrowed_payloads() {
     }
 }
 
+// covers: IndexedBatchAppender::id
+// covers: BatchMessage::batch_offset
+// covers: IndexedBatchPoller::current_batch_index
 #[test]
 fn corruption_is_allocation_free_and_cannot_advance_poller() {
     let directory = std::env::temp_dir().join(format!("mmapq-lending-error-{}", std::process::id()));

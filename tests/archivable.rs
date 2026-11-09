@@ -22,6 +22,8 @@ fn read_byte24(dir: &str) -> u8 {
     byte[0]
 }
 
+// covers: QueueConfig::archivable
+// covers: IndexedQueue::create
 #[test]
 fn archivable_true_sets_byte24() {
     let dir = temp_dir("true");

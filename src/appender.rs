@@ -187,6 +187,8 @@ mod tests {
         (q, rt)
     }
 
+    // covers: IndexedQueue::create_appender
+    // covers: IndexedAppender::append
     #[test]
     fn test_append_and_read_back() {
         let (q, _rt) = setup_queue("test_app_single");
@@ -195,6 +197,8 @@ mod tests {
         assert!(idx >= 0, "append should return a valid index");
     }
 
+    // covers: IndexedAppender::append_uncommitted
+    // covers: IndexedAppender::commit
     #[test]
     fn test_append_uncommitted_and_commit() {
         let (q, _rt) = setup_queue("test_app_uncommitted");
@@ -259,5 +263,18 @@ mod tests {
         drop(a);
         drop(q);
         drop(rt);
+    }
+
+    /// A fresh lane's start_offset is the payload start (64) and appends do
+    /// not move it — only archiving does (INITIAL_PAYLOAD_POSITION).
+    // covers: IndexedAppender::start_offset
+    #[test]
+    fn test_appender_start_offset_is_payload_start() {
+        let (q, _rt) = setup_queue("test_app_start_offset");
+        let mut a = q.create_appender().unwrap();
+        assert_eq!(a.start_offset(), 64);
+        a.append(b"hello").unwrap();
+        a.append_uncommitted(b"uncommitted").unwrap();
+        assert_eq!(a.start_offset(), 64, "writes do not move the boundary");
     }
 }
