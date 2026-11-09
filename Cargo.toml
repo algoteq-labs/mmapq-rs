@@ -9,9 +9,16 @@ readme = "README.md"
 keywords = ["mmap", "shared-memory", "queue", "lock-free", "high-performance"]
 categories = ["data-structures"]
 links = "mmapq"
-exclude = [
-    "c/test",           # vendored C test suite — not part of the Rust crate
-    "*.log",            # bench logs from latency_bench / batch_latency_bench
+# Published files are whitelisted. The crate needs only the Rust sources and
+# the vendored C library sources/headers (built by build.rs). Not shipped:
+# tests/ (they need the full repo: cross_process.rs runs make in c/), and the
+# rest of c/ (C tests, docs, scripts, CI files). scripts/check_package.sh
+# checks the packaged C files against the files git tracks in c/.
+include = [
+    "/Cargo.toml", "/Cargo.lock", "/build.rs", "/README.md", "/LICENSE",
+    "/RELEASE-NOTES-*.md",
+    "/src/**/*.rs", "/examples/*.rs",
+    "/c/LICENSE", "/c/src/**/*.c", "/c/src/**/*.h", "/c/include/**/*.h",
 ]
 
 [build-dependencies]

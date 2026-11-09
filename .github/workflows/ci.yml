@@ -40,3 +40,19 @@ jobs:
         run: cargo test --no-fail-fast
       - name: Binding coverage gate (every public binding method directly tested)
         run: bash c/scripts/check_binding_coverage.sh --rust .
+
+  package:
+    name: Package (crate)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout mmapq-rs (committed gitlink)
+        uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
+        with:
+          submodules: recursive
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable branch; version set by toolchain input
+        with:
+          toolchain: 1.99.1
+      - name: Check, verify and smoke-test the packaged crate
+        run: bash scripts/check_package.sh
