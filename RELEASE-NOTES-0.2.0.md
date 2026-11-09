@@ -7,9 +7,9 @@ authoritative for the wire format (schema_version 2: 0.1.0
 queues are refused at open; recreate or export/import to migrate), the
 removed/replaced C functions, the behavior changes under unchanged names,
 and the Java-interop position.** This file carries only the
-binding-specific entries. Package versions are deliberately unchanged
-until release preparation; these changes break source compatibility, not
-the queue or export layout.
+binding-specific entries. The binding changes below break source
+compatibility; the queue-format change (schema 2) is described in the
+C library's notes.
 
 ## Breaking (Rust)
 
@@ -71,6 +71,14 @@ the queue or export layout.
 - `Runtime::set_affinity` maps the C result through the standard error
   mapping: an out-of-range CPU is `InvalidArgument`, a closed runtime
   `QueueClosed`, allocation failure `OutOfMemory` (was `Internal` for all).
+
+## Packaging (Rust)
+
+- The published crate now contains only what builds it: the Rust sources,
+  the examples, and the vendored C library sources and headers. The 0.1.0
+  crate also shipped the Rust tests and the C library's documentation,
+  scripts and examples. The test suite runs from the repository, not from
+  the crate.
 
 ## Hardening (Rust)
 
