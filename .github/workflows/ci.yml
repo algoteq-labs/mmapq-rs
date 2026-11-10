@@ -56,3 +56,14 @@ jobs:
           toolchain: 1.99.1
       - name: Check, verify and smoke-test the packaged crate
         run: bash scripts/check_package.sh
+      - name: Build with GCC 14
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-14
+          gcc-14 --version | head -1
+          # A separate target directory, so the C sources are compiled again, by gcc-14.
+          CC=gcc-14 CARGO_TARGET_DIR="$RUNNER_TEMP/gcc14-target" cargo build --release -vv 2>&1 | tee "$RUNNER_TEMP/gcc14.log"
+          # the cc crate logs the compiler it picked from CC for this crate's build script
+          grep -qF '[mmapq ' "$RUNNER_TEMP/gcc14.log" && grep -qF 'CC = Some(gcc-14)' "$RUNNER_TEMP/gcc14.log" \
+            || { echo "the C sources were not compiled with gcc-14"; exit 1; }
