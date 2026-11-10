@@ -67,6 +67,12 @@ generated code is the same FFI calls you would write by hand.
 
 ## Quick start
 
+To build against this repository rather than a published release, clone it
+with its C submodule — `git clone --recurse-submodules
+https://github.com/algoteq-labs/mmapq-rs` — and depend on the checkout by
+path in your application's `Cargo.toml`: `mmapq = { path = "../mmapq-rs" }`
+(the crate is named `mmapq`; its other dependencies come from crates.io).
+
 Use a persistent filesystem for `./data`. `/dev/shm` is volatile, and `/tmp`
 may be cleared on reboot. Commit makes messages visible; it does not flush
 them to stable storage or guarantee power-loss durability. Save consumer
@@ -204,9 +210,20 @@ takes a free lane, and its walk finds nothing of the crashed writer's. A
 writer killed without closing leaves its ID taken (`IdConflict`) until an
 operator who has established that the owner is dead releases it with the
 `mmapq-ids` tool from the [mmapq](https://github.com/algoteq-labs/mmapq)
-repository (`make mmapq-ids`, then `mmapq-ids <dir> <queue> --unset <id>`);
-`doc/guide/05-crash-and-restart.md` there gives the procedure. A writer
-that closed cleanly released its ID.
+repository (from its root: `make mmapq-ids`, then
+`tools/mmapq-ids/build/release/mmapq-ids <dir> <queue> --unset <id>` — the
+tool is not installed on your PATH); `doc/guide/05-crash-and-restart.md`
+there gives the procedure. A writer that closed cleanly released its ID.
+
+A crash can tear the record being written: the lane's highest-offset
+uncommitted record at that crash. Discard it, and rule out the records an
+earlier restart discarded — record their offsets durably, or validate each
+payload with your own check. A record that is not committed is never
+removed, so it reappears in every later walk. On a batch lane,
+`join_completed_open_batch()` reports — once — the batch the rejoin
+completed after a crash; it reappears in later walks unreported. Both
+recipes are in `doc/guide/05-crash-and-restart.md` in the mmapq
+repository.
 
 ```rust
 use mmapq::{IndexedQueue, QueueConfig, Runtime};

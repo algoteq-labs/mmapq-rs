@@ -81,6 +81,9 @@ C library's notes.
   Linux, so 0.1.0 did not compile there.
 - The build no longer prints unused-parameter warnings from the bundled C
   sources: it now passes the C library's own warning flag.
+- `IndexedArchiver::archivable_files` and `IndexedBatchArchiver::archivable_files`
+  returned at most 1024 paths without saying that more files qualified; they
+  now return the complete listing.
 
 ## Packaging (Rust)
 

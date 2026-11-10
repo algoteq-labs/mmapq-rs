@@ -275,3 +275,73 @@ fn batch_undo_protects() {
         other => panic!("read(0) returned {other:?}, expected Available"),
     }
 }
+
+/// Geometry for the listing-size tests: 32 KiB regions and files, one
+/// 30,000-byte message per file (it does not fit beside another), so N
+/// messages fill payload files 0..N-1. Archiving up to N-1 leaves message
+/// N-1 live; the lane's start_offset is the end of message N-2, inside file
+/// N-2, so exactly payload_0_0 .. payload_0_{N-3} (N-2 files) are listed.
+fn big_listing_names(n: usize) -> Vec<String> {
+    let mut v: Vec<String> = (0..n - 2).map(|k| format!("payload_0_{k}")).collect();
+    v.sort();
+    v
+}
+
+fn base_names(paths: &[String]) -> Vec<String> {
+    let mut v: Vec<String> = paths
+        .iter()
+        .map(|p| std::path::Path::new(p).file_name().unwrap().to_str().unwrap().to_string())
+        .collect();
+    v.sort();
+    v
+}
+
+// covers: IndexedArchiver::archivable_files
+#[test]
+fn single_listing_past_the_first_array_is_complete() {
+    let (q, _dir, _rt) = setup_single("big-single");
+    let msg = vec![7u8; 30000];
+    let mut last = -1;
+    {
+        let mut a = q.create_appender().unwrap();
+        for _ in 0..1100 {
+            last = a.append(&msg).unwrap();
+        }
+    }
+    assert_eq!(last, 1099);
+    let mut arch = q.create_archiver().unwrap();
+    arch.archive_up_to_index(1099).unwrap();
+    let list = arch.archivable_files().unwrap();
+    assert_eq!(list.len(), 1098);
+    assert_eq!(base_names(&list), big_listing_names(1100));
+}
+
+// covers: IndexedBatchArchiver::archivable_files
+#[test]
+fn batch_listing_past_the_first_array_is_complete() {
+    let rt = Runtime::region_mapper().unwrap();
+    let dir = temp_dir("big-batch");
+    let q = IndexedBatchQueue::create(
+        QueueConfig::new(&dir, "q")
+            .archivable(true)
+            .region_size(32768)
+            .max_file_size(32768)
+            .write_runtime(&rt)
+            .read_runtime(&rt),
+    )
+    .unwrap();
+    let msg = vec![7u8; 30000];
+    let mut last = -1;
+    {
+        let mut a = q.create_appender().unwrap();
+        for _ in 0..1100 {
+            last = a.append_and_commit(&msg).unwrap();
+        }
+    }
+    assert_eq!(last, 1099);
+    let mut arch = q.create_archiver().unwrap();
+    arch.archive_up_to_index(1099).unwrap();
+    let list = arch.archivable_files().unwrap();
+    assert_eq!(list.len(), 1098);
+    assert_eq!(base_names(&list), big_listing_names(1100));
+}

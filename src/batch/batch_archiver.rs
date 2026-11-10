@@ -92,33 +92,39 @@ impl IndexedBatchArchiver {
     /// is harmless, because the listing already reflects it.
     ///
     /// Only returns paths to files that actually exist on disk. The listing
-    /// can fail with `MapTimedOut` if a live-header read times out during
-    /// the boundary cap scan.
+    /// is complete: a full result is re-listed with a larger array until it
+    /// fits. The listing can fail with `MapTimedOut` if a live-header read
+    /// times out during the boundary cap scan.
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
-        const MAX: usize = 1024;
-        let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
-        // SAFETY: paths has MAX writable slots; C returns at most MAX owned strdup strings.
-        // The owned handle is thread-confined and retains its read runtime for lazy initialization.
-        let count = unsafe {
-            ffi::mmapq_indexed_batch_archiver_archivable_files(self.inner, paths.as_mut_ptr(), MAX as i32)
-        };
-        if count < 0 {
-            return Err(map_rc(count));
+        // C fills at most `cap` slots and does not say whether more files
+        // qualify, so a full result is re-listed with a larger array until
+        // it comes back short: the returned listing is complete.
+        let mut cap: usize = 1024;
+        loop {
+            let max = i32::try_from(cap).map_err(|_| MmapError::OutOfMemory)?;
+            let mut paths: Vec<*mut libc::c_char> = vec![std::ptr::null_mut(); cap];
+            // SAFETY: paths has cap writable slots; C returns at most cap owned strdup strings.
+            // The owned handle is thread-confined and retains its read runtime for lazy initialization.
+            let count = unsafe { ffi::mmapq_indexed_batch_archiver_archivable_files(self.inner, paths.as_mut_ptr(), max) };
+            if count < 0 {
+                return Err(map_rc(count));
+            }
+            let count = count as usize;
+            let mut result = Vec::with_capacity(count);
+            for &p in &paths[..count] {
+                // SAFETY: A non-negative C count denotes initialized, non-null, NUL-terminated
+                // strdup results in paths; conversion copies the string before it is freed.
+                let s = unsafe { CStr::from_ptr(p).to_string_lossy().into_owned() };
+                // SAFETY: This pointer came from C strdup, has been copied into Rust ownership,
+                // and is freed exactly once with the matching libc allocator.
+                unsafe { libc::free(p as *mut libc::c_void) }
+                result.push(s);
+            }
+            if count < cap {
+                return Ok(result);
+            }
+            cap *= 2;
         }
-        if count == 0 {
-            return Ok(Vec::new());
-        }
-        let mut result = Vec::with_capacity(count as usize);
-        for i in 0..count as usize {
-            // SAFETY: A positive C count denotes initialized, non-null, NUL-terminated
-            // strdup results in paths; conversion copies the string before it is freed.
-            let s = unsafe { CStr::from_ptr(paths[i]).to_string_lossy().into_owned() };
-            // SAFETY: This pointer came from C strdup, has been copied into Rust ownership,
-            // and is freed exactly once with the matching libc allocator.
-            unsafe { libc::free(paths[i] as *mut libc::c_void) }
-            result.push(s);
-        }
-        Ok(result)
     }
 
     /// Delete the files in `marked` that a fresh listing still reports as
