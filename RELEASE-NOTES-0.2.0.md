@@ -71,6 +71,9 @@ C library's notes.
 - `Runtime::set_affinity` maps the C result through the standard error
   mapping: an out-of-range CPU is `InvalidArgument`, a closed runtime
   `QueueClosed`, allocation failure `OutOfMemory` (was `Internal` for all).
+- The crate builds on ARM64 Linux. `IndexedArchiver::print_summary` typed
+  its C buffer as `i8` rather than `c_char`, which is unsigned on ARM64
+  Linux, so 0.1.0 did not compile there.
 
 ## Packaging (Rust)
 

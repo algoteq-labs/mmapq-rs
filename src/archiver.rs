@@ -116,7 +116,7 @@ impl IndexedArchiver {
 
     /// Return a human-readable summary of the queue's file layout.
     pub fn print_summary(&self) -> String {
-        let mut buf = [0i8; 4096];
+        let mut buf = [0 as libc::c_char; 4096];
         // SAFETY: buf supplies the full advertised writable capacity to snprintf-based C output.
         // The owned handle is thread-confined and retains its read runtime for lazy initialization.
         let n = unsafe { ffi::mmapq_indexed_archiver_print_summary(self.inner, buf.as_mut_ptr(), 4096) };
