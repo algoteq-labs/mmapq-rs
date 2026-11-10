@@ -76,7 +76,7 @@ positions in application state and seek explicitly when resuming.
 use mmapq::{IndexedQueue, NextMove, QueueConfig, Runtime};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    std::fs::create_dir_all("./data")?;
+    std::fs::create_dir_all("./data")?; // the base directory must exist
     let rt = Runtime::region_mapper()?;
     let q = IndexedQueue::create(
         QueueConfig::new("./data", "my_queue")
@@ -98,6 +98,38 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Re-sequenced commits
+
+A writer can store each payload when it arrives and publish later, in its
+own order: `append_uncommitted()` writes the payload invisibly and returns
+its offset, and `commit(offset)` assigns the next index to it. Commit in
+sequence order and index order is sequence order, whatever order the
+payloads arrived in (the C repository's guide, chapter 4).
+
+```rust
+use mmapq::{IndexedQueue, QueueConfig, Runtime};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all("./data")?; // the base directory must exist
+    let rt = Runtime::region_mapper()?;
+    let q = IndexedQueue::create(
+        QueueConfig::new("./data", "my_queue")
+            .write_runtime(&rt)
+            .read_runtime(&rt),
+    )?;
+    let mut appender = q.create_appender_with_id(0)?; // this writer's fixed lane
+
+    // Packets arrive out of order: write each payload as it arrives…
+    let late = appender.append_uncommitted(b"seq 2")?;
+    let early = appender.append_uncommitted(b"seq 1")?;
+    // …and commit in sequence order: commit assigns the next index.
+    let i1 = appender.commit(early)?;
+    let i2 = appender.commit(late)?;
+    assert_eq!(i2, i1 + 1);
+    Ok(())
+}
+```
+
 ## Batch queues — the transaction pattern
 
 A batch queue commits N messages atomically: consumers never observe a
@@ -112,6 +144,48 @@ batch.append(b"event 2")?;
 // If anything above returned early via `?`, `batch` drops here and rolls
 // back — the events never become visible. Only an explicit commit publishes:
 batch.commit()?;   // consumes `batch`; the batch is now atomically visible
+```
+
+Consuming a batch queue: `create_poller()` on an `IndexedBatchQueue`
+returns the batch poller; its closure gets the batch index and a lending
+iterator over the batch's messages.
+
+```rust
+use mmapq::{IndexedBatchQueue, NextMove, QueueConfig, Runtime};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    std::fs::create_dir_all("./data")?; // the base directory must exist
+    let rt = Runtime::region_mapper()?;
+    let q = IndexedBatchQueue::create(
+        QueueConfig::new("./data", "my_batches")
+            .write_runtime(&rt)
+            .read_runtime(&rt),
+    )?;
+
+    let mut appender = q.create_appender()?;
+    let mut batch = appender.start_batch()?;
+    batch.append(b"event 1")?;
+    batch.append(b"event 2")?;
+    batch.commit()?;
+
+    let mut poller = q.create_poller()?;
+    poller.poll(|batch_index, mut messages| {
+        loop {
+            match messages.next() {
+                // the payload is borrowed until the next step: copy what you keep
+                Ok(Some((data, appender_id))) => {
+                    println!("batch {batch_index}, lane {appender_id}: {:?}", data)
+                }
+                Ok(None) => return NextMove::Advance, // the whole batch was read
+                Err(e) => {
+                    eprintln!("batch {batch_index}: {e}");
+                    return NextMove::Stop; // hold the cursor; poll again to retry
+                }
+            }
+        }
+    })?;
+    Ok(())
+}
 ```
 
 ## Recovery — uncommitted messages and batches
@@ -152,7 +226,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut it = appender.uncommitted_iter()?;
         while let Some((offset, data)) = it.next()? {
             println!("recovered {} bytes at {}", data.len(), offset);
-            offsets.push(offset); // commit below; skipping is also valid
+            // A crash can leave a record torn, and a torn record reappears in
+            // every later walk: commit only what your own check accepts.
+            if is_valid(data) {
+                offsets.push(offset); // commit below; skipping is also valid
+            }
         }
     }
     for offset in offsets {
@@ -164,6 +242,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // appender.join_completed_open_batch() reports a crash-interrupted batch
     // the rejoin completed to staged.
     Ok(())
+}
+
+// The application's own integrity check — for example a checksum or a
+// sequence number carried in the payload; the library has none.
+fn is_valid(data: &[u8]) -> bool {
+    !data.is_empty() // replace with your check
 }
 ```
 

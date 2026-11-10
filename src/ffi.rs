@@ -492,6 +492,11 @@ extern "C" {
         out: *mut *mut IndexedArchiver,
     ) -> i32;
 
+    pub fn mmapq_indexed_archiver_archivable_checked(
+        a: *mut IndexedArchiver,
+        archivable_out: *mut c_int,
+    ) -> c_int;
+
     pub fn mmapq_indexed_archiver_archive_up_to_index(
         a: *mut IndexedArchiver,
         index: i64,
@@ -762,6 +767,11 @@ extern "C" {
         runtime: *mut Runtime,
         out: *mut *mut IndexedBatchArchiver,
     ) -> i32;
+
+    pub fn mmapq_indexed_batch_archiver_archivable_checked(
+        a: *mut IndexedBatchArchiver,
+        archivable_out: *mut c_int,
+    ) -> c_int;
 
     pub fn mmapq_indexed_batch_archiver_archive_up_to_index(
         a: *mut IndexedBatchArchiver,

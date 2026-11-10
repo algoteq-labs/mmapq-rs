@@ -48,13 +48,32 @@ pub struct IndexedArchiver {
 }
 
 impl IndexedArchiver {
-    /// Advance the start index past the given index.
+    /// Report whether the queue was created archivable.
+    ///
+    /// The queue's meta is read on first use and cached on this archiver.
+    /// Until the queue's first appender has written its files the answer is
+    /// not determinable yet and the call returns `Err(FileNotFound)`,
+    /// `Err(NotReady)` or `Err(MapTimedOut)` — retry on this same archiver.
+    /// Any other error is terminal and repeats on every later call.
+    pub fn archivable(&self) -> Result<bool, MmapError> {
+        let mut out: libc::c_int = 0;
+        // SAFETY: out is a writable local; the owned handle is thread-confined and
+        // retains its read runtime for the lazy meta open.
+        let rc = unsafe { ffi::mmapq_indexed_archiver_archivable_checked(self.inner, &mut out) };
+        if rc != 0 {
+            return Err(map_rc(rc));
+        }
+        Ok(out != 0)
+    }
+
+    /// Archive every entry below `index`: `index` becomes the new start index
+    /// (the first unarchived entry).
     ///
     /// **Forward** (`index > current start_index`): walks headers backwards,
     /// records the last committed payload position per appender, advances
     /// past the committed message to find the next write offset, and commits
-    /// the new start_index atomically. After this call, entries at or below
-    /// `index` are no longer accessible via poller or reader.
+    /// the new start_index atomically. After this call, entries below `index` are no longer
+    /// accessible via poller or reader; `index` itself is.
     ///
     /// **Backward / undo** (`index < current start_index`): validates that
     /// all header and payload files covering the range still exist, then

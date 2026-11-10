@@ -216,7 +216,15 @@ impl IndexedPoller {
         unsafe { ffi::mmapq_indexed_poller_move_to_start(self.inner) != 0 }
     }
 
-    /// The current cursor position.
+    /// The index the next poll will read.
+    ///
+    /// After a poll that delivered index i and advanced, it is i + 1; after a
+    /// successful move to index i, it is i. A poller that has neither polled
+    /// nor moved yet reports 0; its first poll positions it at `start_index()`.
+    ///
+    /// Inside the poll closure it is still the delivered index: the cursor
+    /// moves after the closure returns. A snapshot taken there, after applying
+    /// the delivered entry, is identified by that index + 1.
     pub fn current_index(&self) -> i64 {
         // SAFETY: The poller is owned and thread-confined; safe callbacks cannot retain a
         // payload/cursor or overlap another operation on this handle. Its runtime

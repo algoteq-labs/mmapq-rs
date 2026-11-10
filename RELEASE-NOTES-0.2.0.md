@@ -64,6 +64,9 @@ C library's notes.
 - `mmapq-ids` operator tool (in the C repository's `tools/`).
 - `IndexedArchiver::reclaim_files` and `IndexedBatchArchiver::reclaim_files`: delete
   files from an `archivable_files()` listing safely, even against a concurrent undo.
+- `IndexedArchiver::archivable` and `IndexedBatchArchiver::archivable`: whether the
+  queue was created archivable; retryable on the same archiver until the queue's
+  first appender has written its files.
 
 ## Fixed (Rust)
 

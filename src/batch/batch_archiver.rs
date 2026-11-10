@@ -40,7 +40,26 @@ pub struct IndexedBatchArchiver {
 }
 
 impl IndexedBatchArchiver {
-    /// Advance the start index past the given batch index.
+    /// Report whether the queue was created archivable.
+    ///
+    /// The queue's meta is read on first use and cached on this archiver.
+    /// Until the queue's first appender has written its files the answer is
+    /// not determinable yet and the call returns `Err(FileNotFound)`,
+    /// `Err(NotReady)` or `Err(MapTimedOut)` — retry on this same archiver.
+    /// Any other error is terminal and repeats on every later call.
+    pub fn archivable(&self) -> Result<bool, MmapError> {
+        let mut out: libc::c_int = 0;
+        // SAFETY: out is a writable local; the owned handle is thread-confined and
+        // retains its read runtime for the lazy meta open.
+        let rc = unsafe { ffi::mmapq_indexed_batch_archiver_archivable_checked(self.inner, &mut out) };
+        if rc != 0 {
+            return Err(map_rc(rc));
+        }
+        Ok(out != 0)
+    }
+
+    /// Archive every batch below `index`: `index` becomes the new start index
+    /// (the first unarchived batch).
     ///
     /// **Forward** (`index > current start_index`): walks headers backwards,
     /// records the last committed batch per appender, exhausts the batch
