@@ -350,7 +350,6 @@ fn batch_commit_out_of_order_multi_legal() {
 
 /// Batch archiver forward + undo through the wrapper: archiving advances
 /// the read boundary (poll below it → Archived), undo restores it.
-/// (reclaim_files has no wrapper binding — C-only for both queue types.)
 // covers: IndexedBatchArchiver::archivable_files
 #[test]
 fn batch_archiver_forward_and_undo() {

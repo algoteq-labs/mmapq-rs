@@ -74,7 +74,7 @@ impl IndexedBatchArchiver {
     ///
     /// Only returns paths to files that actually exist on disk. The listing
     /// can fail with `MapTimedOut` if a live-header read times out during
-    /// the boundary cap scan (CAND-35).
+    /// the boundary cap scan.
     pub fn archivable_files(&self) -> Result<Vec<String>, MmapError> {
         const MAX: usize = 1024;
         let mut paths: [*mut libc::c_char; MAX] = [std::ptr::null_mut(); MAX];
@@ -100,6 +100,44 @@ impl IndexedBatchArchiver {
             result.push(s);
         }
         Ok(result)
+    }
+
+    /// Delete the files in `marked` that a fresh listing still reports as
+    /// archivable, and return how many this call deleted.
+    ///
+    /// Pass paths exactly as `archivable_files()` returned them; they are
+    /// matched by exact string comparison. The re-list and the deletion happen
+    /// in one shared hold of the queue's `archive.lock`, so an undo cannot run
+    /// in between: a mark that a fresh listing no longer reports — live again
+    /// after an undo, or already deleted — is skipped, never deleted. Safe to
+    /// call at any time; there is no wait.
+    ///
+    /// Errors: `InvalidArgument` if a path contains a NUL byte or there are more
+    /// than `i32::MAX` marks (nothing is deleted); `MapTimedOut` if a live-header
+    /// read timed out during the re-list; `Eio` if locking or deleting failed —
+    /// files deleted so far stay deleted, and a retry re-lists and skips them.
+    pub fn reclaim_files<S: AsRef<str>>(&self, marked: &[S]) -> Result<usize, MmapError> {
+        let cstrings: Vec<std::ffi::CString> = marked
+            .iter()
+            .map(|s| std::ffi::CString::new(s.as_ref()))
+            .collect::<Result<_, _>>()
+            .map_err(|_| MmapError::InvalidArgument)?;
+        let n = i32::try_from(marked.len()).map_err(|_| MmapError::InvalidArgument)?;
+        let mut ptrs: Vec<*mut libc::c_char> = cstrings
+            .iter()
+            .map(|c| c.as_ptr() as *mut libc::c_char)
+            .collect();
+        // SAFETY: the header documents that the marked array and its strings
+        // are only read for the duration of the call, and the CStrings (and
+        // the pointer vector backing ptrs) outlive it. The owned handle is
+        // thread-confined and retains its read runtime for lazy initialization.
+        let rc = unsafe {
+            ffi::mmapq_indexed_batch_archiver_reclaim_files(self.inner, ptrs.as_mut_ptr(), n)
+        };
+        if rc < 0 {
+            return Err(map_rc(rc));
+        }
+        Ok(rc as usize)
     }
 
     // print_summary is not available for batch archivers — the C function

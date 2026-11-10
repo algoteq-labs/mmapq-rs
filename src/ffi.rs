@@ -503,6 +503,12 @@ extern "C" {
         max_paths: c_int,
     ) -> c_int;
 
+    pub fn mmapq_indexed_archiver_reclaim_files(
+        a: *mut IndexedArchiver,
+        marked_paths: *mut *mut c_char,
+        n_marked: c_int,
+    ) -> c_int;
+
     pub fn mmapq_indexed_archiver_print_summary(
         a: *mut IndexedArchiver,
         sb: *mut c_char,
@@ -766,6 +772,12 @@ extern "C" {
         a: *mut IndexedBatchArchiver,
         paths_out: *mut *mut c_char,
         max_paths: c_int,
+    ) -> c_int;
+
+    pub fn mmapq_indexed_batch_archiver_reclaim_files(
+        a: *mut IndexedBatchArchiver,
+        marked_paths: *mut *mut c_char,
+        n_marked: c_int,
     ) -> c_int;
 
     pub fn mmapq_indexed_batch_archiver_close(a: *mut IndexedBatchArchiver);

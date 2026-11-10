@@ -62,6 +62,8 @@ C library's notes.
 - Batch lifecycle: `join_completed_open_batch`, `complete_uncommitted`,
   `commit_batch` (checked throughout).
 - `mmapq-ids` operator tool (in the C repository's `tools/`).
+- `IndexedArchiver::reclaim_files` and `IndexedBatchArchiver::reclaim_files`: delete
+  files from an `archivable_files()` listing safely, even against a concurrent undo.
 
 ## Fixed (Rust)
 
