@@ -85,6 +85,33 @@ C library's notes.
   returned at most 1024 paths without saying that more files qualified; they
   now return the complete listing.
 
+## Performance (Rust)
+
+Round-trip latency against 0.1.0, same machine and session
+(2026-11-11): isolated cores 5/7/9, 20 M iterations of 64 B, p50 in ns,
+the median of 6 runs, 0.1.0 → 0.2.0:
+
+| | internal | external, async | external, sync |
+|:--|--:|--:|--:|
+| single-message | 272 → 279 | 288 → 289 | 264 → 264 |
+| batch | 282 → 287 | 282 → 288 | 269 → 272 |
+
+A second internal-mode run alternating the two versions, built with a
+current compiler (rustc 1.99.1), gave the same internal figures
+(single-message 272 → 279, batch 281 → 286).
+
+- **Batch, +3 to +6 ns:** the batch path's added validation in the C
+  library (see the C notes' Performance section) and the publish now
+  done by `complete`.
+- **Single-message, separate processes:** unchanged.
+- **Single-message, client and server in one process, +7 ns:** not yet
+  explained. The library's instruction counts for append, poll and the
+  echo step (poll plus append inside the handler) are equal to or lower
+  than 0.1.0's, with synchronous and asynchronous mapping; the Rust
+  `append` and `poll` wrappers are unchanged; and the cache-line transfer
+  counts between the two threads (`perf c2c`) are not higher. Under
+  investigation for 0.2.1.
+
 ## Packaging (Rust)
 
 - The published crate now contains only what builds it: the Rust sources,

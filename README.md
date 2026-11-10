@@ -298,9 +298,10 @@ cargo test --test cross_process
 ## Performance
 
 The C library achieves ~280 ns median round-trip between two processes on
-isolated cores. The Rust wrapper adds roughly **~10 ns** per round-trip
-(one FFI call, closure dispatch, slice construction) — the safety layer is
-free in practice.
+isolated cores. In the 0.2.0 measurements the Rust wrapper's single-message
+median round-trip is within **1–3 ns** of the C library's in the same mode
+(one FFI call, closure dispatch and slice construction per message) — the
+safety layer is close to free.
 
 Quick verification (completes in seconds):
 
