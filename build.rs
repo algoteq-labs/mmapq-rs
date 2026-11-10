@@ -26,6 +26,9 @@ fn main() {
         .include(c_inc)
         .include(c_inc_src)
         .define("_GNU_SOURCE", None)
+        // The C library's own builds pass this (CMakeLists.txt, Makefile):
+        // state machine ops take ctx they don't always use.
+        .flag_if_supported("-Wno-unused-parameter")
         .warnings_into_errors(false);
 
     if std::env::var("PROFILE").unwrap_or_default() == "release" {

@@ -124,6 +124,16 @@ while iterating — the compiler enforces it. Commit found offsets with
 Archiving may remove messages the walk has not yielded, and discarded
 batches reappear in recovery — recovery code decides.
 
+After a crash, recover through the same lane. A writer that owns a fixed
+lane ID rejoins it with `create_appender_with_id(id)`; `create_appender()`
+takes a free lane, and its walk finds nothing of the crashed writer's. A
+writer killed without closing leaves its ID taken (`IdConflict`) until an
+operator who has established that the owner is dead releases it with the
+`mmapq-ids` tool from the [mmapq](https://github.com/algoteq-labs/mmapq)
+repository (`make mmapq-ids`, then `mmapq-ids <dir> <queue> --unset <id>`);
+`doc/guide/05-crash-and-restart.md` there gives the procedure. A writer
+that closed cleanly released its ID.
+
 ```rust
 use mmapq::{IndexedQueue, QueueConfig, Runtime};
 
@@ -136,7 +146,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .read_runtime(&rt),
     )?;
 
-    let mut appender = q.create_appender()?;
+    let mut appender = q.create_appender_with_id(0)?; // this writer's fixed lane
     let mut offsets = Vec::new();
     {
         let mut it = appender.uncommitted_iter()?;

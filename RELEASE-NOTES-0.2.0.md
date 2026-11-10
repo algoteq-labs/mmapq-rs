@@ -76,6 +76,8 @@ C library's notes.
 - The crate builds on ARM64 Linux. `IndexedArchiver::print_summary` typed
   its C buffer as `i8` rather than `c_char`, which is unsigned on ARM64
   Linux, so 0.1.0 did not compile there.
+- The build no longer prints unused-parameter warnings from the bundled C
+  sources: it now passes the C library's own warning flag.
 
 ## Packaging (Rust)
 

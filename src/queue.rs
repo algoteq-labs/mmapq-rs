@@ -38,10 +38,14 @@ unsafe impl Sync for IndexedQueue {}
 impl IndexedQueue {
     /// Create or open the queue with the given configuration.
     ///
-    /// The queue directory and metadata are created lazily (on first
-    /// participant creation) if they do not exist — matching C semantics.
-    /// Metadata is not pre-opened here; the metadata getters that raced with
-    /// lazy initialization were removed (doc/unsafe-audit.md U1).
+    /// Nothing is written until the first appender is created; that
+    /// appender's queue handle's configuration is what goes to disk. Of it,
+    /// `archivable`, `region_size`, `max_file_size` and `start_index` are
+    /// stored and fixed: an existing queue keeps its stored values and this
+    /// config's are ignored. `ring_size` and `timeout` apply to this handle.
+    /// Metadata is not pre-opened
+    /// here; the metadata getters that raced with lazy initialization were
+    /// removed (doc/unsafe-audit.md U1).
     pub fn create(mut config: QueueConfig) -> Result<Self, MmapError> {
         let dir = CString::new(config.directory.as_str())
             .map_err(|_| MmapError::Internal("directory contains null byte".into()))?;
@@ -113,6 +117,9 @@ impl IndexedQueue {
 
     /// Create an appender with a specific ID.
     /// Returns `Err(IdConflict)` if the ID is already in use.
+    /// A writer killed without closing leaves its ID taken until an operator
+    /// releases it (the `mmapq-ids` tool in the C repository); one that
+    /// closed released it.
     pub fn create_appender_with_id(
         &self,
         appender_id: u8,
