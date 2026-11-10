@@ -280,5 +280,6 @@ BSD 3-Clause — see [LICENSE](LICENSE).
 
 ## Platform
 
-Linux only (x86-64; ARM64 untested). Requires naturally aligned lock-free
+Linux only (x86-64 and ARM64; ARM64 passed a one-off full run for 0.2.0
+and is not yet in regular CI). Requires naturally aligned lock-free
 atomics over `MAP_SHARED` mmap.
