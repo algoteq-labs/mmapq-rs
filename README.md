@@ -40,12 +40,12 @@ The bindings provide ownership and error handling around the C API:
   be touched again. Dropping a `BatchWriter` without committing rolls the
   batch back. In an event-sourced processor, an early return or `?` on an
   error path *is* a rollback: the partial batch never becomes visible.
-- **The upcoming hardening API enforces zero-copy borrowing.** Reads and
+- **The API enforces zero-copy borrowing.** Reads and
   transfers borrow readers exclusively. A message must be processed before
   another read. Batch cursors use a lending `next()`, not standard
   `Iterator`: process each payload before advancing. No implicit payload
   copies, heap ownership, locks, or runtime borrow checks are introduced.
-  This is source-breaking relative to published 0.1.0; see
+  This is source-breaking relative to 0.1.0, the previous release; see
   [release notes](RELEASE-NOTES-0.2.0.md).
 - **Poll closures are panic-safe.** A panic inside a poll handler is caught
   at the FFI boundary and re-raised after the C stack frame unwinds cleanly,
@@ -139,7 +139,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 ## Batch queues — the transaction pattern
 
 A batch queue commits N messages atomically: consumers never observe a
-partial batch, and a crash mid-batch discards the uncommitted tail. This is
+partial batch. A crash mid-batch leaves the interrupted batch invisible to
+consumers; the restarted writer finds it again on recovery and decides what
+to do with it (see "Recovery — uncommitted messages and batches" below). This is
 the event-store half of the command/event architecture (one command → one
 committed batch). The RAII rollback is the point:
 
