@@ -52,8 +52,8 @@ const LATENCY_HEADER_SIZE: usize = 6;
 
 fn write_latency_header(buffer: &mut [u8], instance_id: u16, sequence: u32) {
     let buffer = &mut buffer[..LATENCY_HEADER_SIZE];
-    buffer[..2].copy_from_slice(&instance_id.to_be_bytes());
-    buffer[2..LATENCY_HEADER_SIZE].copy_from_slice(&sequence.to_be_bytes());
+    buffer[..2].copy_from_slice(&instance_id.to_le_bytes());
+    buffer[2..LATENCY_HEADER_SIZE].copy_from_slice(&sequence.to_le_bytes());
 }
 
 struct BatchLatencyProbe {
@@ -116,8 +116,8 @@ impl BatchLatencyProbe {
             let _ = poller.poll(|_b_idx, mut iter| {
                 while let Some((data, _aid)) = iter.next().expect("batch iteration") {
                     if data.len() >= 6 {
-                        let rid = u16::from_be_bytes([data[0], data[1]]);
-                        let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                        let rid = u16::from_le_bytes([data[0], data[1]]);
+                        let rseq = u32::from_le_bytes([data[2], data[3], data[4], data[5]]);
                         if rid == my_id && rseq == my_seq {
                             received.store(true, Ordering::Relaxed);
                         }
@@ -322,7 +322,7 @@ fn send_shutdown(probe: &mut BatchLatencyProbe) {
         let _ = poller.poll(|_b_idx, mut iter| {
             while let Some((data, _aid)) = iter.next().expect("batch iteration") {
                 if data.len() >= 6 {
-                    let rseq = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+                    let rseq = u32::from_le_bytes([data[2], data[3], data[4], data[5]]);
                     if rseq == SHUTDOWN_SEQ {
                         received.store(true, Ordering::Relaxed);
                     }
@@ -356,7 +356,7 @@ fn internal_server(dir: &str, write_rt: Option<Runtime>, read_rt: Option<Runtime
             .poll(|_b_idx, mut iter| {
                 if let Some(data) = iter.next().expect("batch iteration").map(|(d, _a)| d) {
                     if data.len() >= 6 {
-                        let seq = u32::from_be_bytes([
+                        let seq = u32::from_le_bytes([
                             data[2], data[3], data[4], data[5],
                         ]);
                         if seq == SHUTDOWN_SEQ {

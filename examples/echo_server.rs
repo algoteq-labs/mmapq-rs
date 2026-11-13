@@ -28,8 +28,8 @@ fn pin_thread(cpu: i32) {
 }
 
 fn parse_message(data: &[u8]) -> (u16, u32, &[u8]) {
-    let instance_id = u16::from_be_bytes([data[0], data[1]]);
-    let sequence = u32::from_be_bytes([data[2], data[3], data[4], data[5]]);
+    let instance_id = u16::from_le_bytes([data[0], data[1]]);
+    let sequence = u32::from_le_bytes([data[2], data[3], data[4], data[5]]);
     let payload = &data[6..];
     (instance_id, sequence, payload)
 }

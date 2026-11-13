@@ -127,7 +127,7 @@ fn main() {
             .poll(|_b_idx, mut iter| {
                 if let Some(data) = iter.next().expect("batch iteration").map(|(d, _aid)| d) {
                     if data.len() >= 6 {
-                        let seq = u32::from_be_bytes([
+                        let seq = u32::from_le_bytes([
                             data[2], data[3], data[4], data[5],
                         ]);
                         if seq == SHUTDOWN_SEQ {
