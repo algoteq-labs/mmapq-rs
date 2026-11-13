@@ -1,6 +1,6 @@
 [package]
 name = "mmapq"
-version = "0.2.0"
+version = "0.2.1-dev"
 edition = "2021"
 description = "Idiomatic Rust bindings for mmapq — low-latency shared-memory indexed queue"
 license = "BSD-3-Clause"
