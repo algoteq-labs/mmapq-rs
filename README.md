@@ -217,15 +217,16 @@ repository (from its root: `make mmapq-ids`, then
 tool is not installed on your PATH); `doc/guide/05-crash-and-restart.md`
 there gives the procedure. A writer that closed cleanly released its ID.
 
-A crash can tear the record being written: the lane's highest-offset
-uncommitted record at that crash. Discard it, and rule out the records an
-earlier restart discarded — record their offsets durably, or validate each
-payload with your own check. A record that is not committed is never
-removed, so it reappears in every later walk. On a batch lane,
-`join_completed_open_batch()` reports — once — the batch the rejoin
-completed after a crash; it reappears in later walks unreported. Both
-recipes are in `doc/guide/05-crash-and-restart.md` in the mmapq
-repository.
+After a crash the queue keeps every record's framing, not its body: a
+record being written when the crash happened keeps its full length, but its
+data may be partly written, and the library cannot tell it from a complete
+record. Validate each uncommitted record with your own check (a sequence
+number or checksum in the payload) before committing it. A record that is
+not committed is never removed, so it reappears in every later walk. On a
+batch lane, `join_completed_open_batch()` reports — once — the batch the
+rejoin completed after a crash; it reappears in later walks unreported.
+The contract and both recipes are in `doc/guide/05-crash-and-restart.md`
+in the mmapq repository.
 
 ```rust
 use mmapq::{IndexedQueue, QueueConfig, Runtime};
@@ -245,8 +246,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let mut it = appender.uncommitted_iter()?;
         while let Some((offset, data)) = it.next()? {
             println!("recovered {} bytes at {}", data.len(), offset);
-            // A crash can leave a record torn, and a torn record reappears in
-            // every later walk: commit only what your own check accepts.
+            // After a crash a record's data may be partly written, and an
+            // uncommitted record reappears in every later walk: commit only
+            // what your own check accepts.
             if is_valid(data) {
                 offsets.push(offset); // commit below; skipping is also valid
             }

@@ -102,8 +102,9 @@ impl IndexedBatchAppender {
     ///
     /// Returns `Some(offset)` once per join-completion event (read-and-clear),
     /// `None` otherwise. The batch was completed by the queue, not the app:
-    /// it may lack messages the app intended; the last counted message may
-    /// have partial content.
+    /// it may lack messages the app intended. As for every batch after a
+    /// crash, its count and message lengths are complete but message data
+    /// may be partly written; validate before committing.
     pub fn join_completed_open_batch(&mut self) -> Option<i64> {
         let mut offset = 0;
         // SAFETY: The live, thread-confined appender is exclusively borrowed; offset is
