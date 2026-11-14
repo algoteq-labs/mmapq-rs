@@ -19,10 +19,21 @@ concurrency:
 
 jobs:
   rust:
-    name: Rust tests (committed gitlink)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    name: Rust tests (committed gitlink)${{ matrix.suffix }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: x86_64, suffix: '', timeout: 30 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64, suffix: ' [arm64]', timeout: 60 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
+      - name: Platform
+        run: |
+          uname -m
+          nproc
+          test "$(uname -m)" = "${{ matrix.arch }}"
       - name: Checkout mmapq-rs (committed gitlink)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
@@ -42,10 +53,21 @@ jobs:
         run: bash c/scripts/check_binding_coverage.sh --rust .
 
   package:
-    name: Package (crate)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    name: Package (crate)${{ matrix.suffix }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-24.04, arch: x86_64, suffix: '', timeout: 15 }
+          - { runner: ubuntu-24.04-arm, arch: aarch64, suffix: ' [arm64]', timeout: 30 }
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: ${{ matrix.timeout }}
     steps:
+      - name: Platform
+        run: |
+          uname -m
+          nproc
+          test "$(uname -m)" = "${{ matrix.arch }}"
       - name: Checkout mmapq-rs (committed gitlink)
         uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5.1.0
         with:
