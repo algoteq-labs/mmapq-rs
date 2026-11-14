@@ -16,7 +16,7 @@ pub enum MmapError {
     MapTimedOut,
 
     /// The backing file does not exist (queue not yet created or already
-    /// archived).
+    /// archived, or its base directory does not exist).
     FileNotFound,
 
     /// An argument is invalid (e.g., zero-length data, NULL pointer).
@@ -35,8 +35,10 @@ pub enum MmapError {
     /// size divides its region_size).
     SchemaMismatch,
 
-    /// I/O error — metadata file write failure (rw_meta_open failed).
-    /// Retry is safe: appender meta writes are idempotent.
+    /// I/O error on a queue file or directory: a write failed, or it cannot
+    /// be created or opened (permission denied, a path component that is not
+    /// a directory, a read-only or full filesystem). Fix the cause, then
+    /// retry; appender meta writes are idempotent.
     Eio,
 
     /// An OS-level I/O error occurred (open, mmap, ftruncate, etc.).
