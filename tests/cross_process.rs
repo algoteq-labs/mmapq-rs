@@ -1,11 +1,18 @@
 use std::path::PathBuf;
 use std::process::{Child, Command};
+use std::sync::Mutex;
 use std::time::Duration;
 
 use mmapq::{IndexedQueue, NextMove, PollResult, QueueConfig};
 
+/// The two tests below run in parallel and each runs `make` in the same `c/`
+/// tree; two concurrent builds race on `libmmapq.a` (`ar: file format not
+/// recognized`, seen on ARM64 CI). Every `make` here holds this lock.
+static C_BUILD_LOCK: Mutex<()> = Mutex::new(());
+
 /// Find or build the C echo_server binary.
 fn c_echo_server_path() -> PathBuf {
+    let _build = C_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let c_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("c");
 
     // Check if already built
@@ -117,12 +124,15 @@ fn test_rust_client_c_batch_echo_server() {
     // Build batch_echo_server (always rebuild to avoid stale binaries)
     let c_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("c");
     let batch_server = c_dir.join("batch_echo_server");
-    let status = Command::new("make")
-        .args(["batch_echo_server"])
-        .current_dir(&c_dir)
-        .status()
-        .expect("make batch_echo_server failed");
-    assert!(status.success(), "make batch_echo_server failed");
+    {
+        let _build = C_BUILD_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let status = Command::new("make")
+            .args(["batch_echo_server"])
+            .current_dir(&c_dir)
+            .status()
+            .expect("make batch_echo_server failed");
+        assert!(status.success(), "make batch_echo_server failed");
+    }
 
     let mut server = Command::new(&batch_server)
         .args([dir_str, "breq", "bres", "-1", "-1", "--sync"])
