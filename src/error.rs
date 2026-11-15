@@ -12,7 +12,9 @@ use std::borrow::Cow;
 #[allow(missing_docs)]
 pub enum MmapError {
     /// The async mapper runtime did not complete the mapping within the
-    /// configured timeout. The operation can be retried.
+    /// configured timeout, or a transient OS condition (an interrupted
+    /// call, a file-descriptor limit) persisted for that long. The
+    /// operation can be retried. A permanent file error is `Eio`.
     MapTimedOut,
 
     /// The backing file does not exist (queue not yet created or already
@@ -36,9 +38,12 @@ pub enum MmapError {
     SchemaMismatch,
 
     /// I/O error on a queue file or directory: a write failed, or it cannot
-    /// be created or opened (permission denied, a path component that is not
-    /// a directory, a read-only or full filesystem). Fix the cause, then
-    /// retry; appender meta writes are idempotent.
+    /// be created, opened or mapped (permission denied, a path component
+    /// that is not a directory, a read-only or full filesystem). This
+    /// includes the next file an appender needs while it runs: the append
+    /// returns `Eio` at once, the appender is unchanged, and the same call
+    /// succeeds once the cause is fixed. Fix the cause, then retry;
+    /// appender meta writes are idempotent.
     Eio,
 
     /// An OS-level I/O error occurred (open, mmap, ftruncate, etc.).
