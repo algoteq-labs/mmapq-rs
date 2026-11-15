@@ -69,7 +69,8 @@ impl IndexedReader {
     /// Returns `Ok(ReadResult::Available(Message))` if the entry exists,
     /// `Ok(ReadResult::EndOfStream)` if it is not yet written,
     /// `Ok(ReadResult::Archived)` if it is below the queue's start index,
-    /// `Err(MapTimedOut)` on mapping timeout.
+    /// `Err(MapTimedOut)` on mapping timeout, `Err(Eio)` if a file it needs
+    /// exists but cannot be read.
     pub fn read(&mut self, index: i64) -> Result<ReadResult<Message<'_>>, MmapError> {
         let ctx = &mut self.ctx;
         // SAFETY: The owned reader and retained runtime are live. The exclusive reader borrow
@@ -145,7 +146,9 @@ impl IndexedReader {
         }
     }
 
-    /// The highest committed index, or -1 if the queue is empty.
+    /// The highest committed index, or -1 if the queue is empty — or if a
+    /// header file it needs exists but cannot be read (a `read` of an index
+    /// in that file then returns `Err(Eio)`).
     pub fn last_index(&mut self) -> i64 {
         // SAFETY: The exclusive borrow prevents outstanding messages while C searches header mappings.
         unsafe { ffi::mmapq_indexed_reader_last_index(self.inner) }

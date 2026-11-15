@@ -43,7 +43,11 @@ pub enum MmapError {
     /// includes the next file an appender needs while it runs: the append
     /// returns `Eio` at once, the appender is unchanged, and the same call
     /// succeeds once the cause is fixed. Fix the cause, then retry;
-    /// appender meta writes are idempotent.
+    /// appender meta writes are idempotent. On the read side, a header or
+    /// payload file that exists but cannot be read is `Eio` from `poll`,
+    /// `read` and the batch equivalents (it used to read as end of stream,
+    /// or as `Corrupt` for a payload file); the same poller or reader
+    /// carries on once the file is readable.
     Eio,
 
     /// An OS-level I/O error occurred (open, mmap, ftruncate, etc.).

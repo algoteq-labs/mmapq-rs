@@ -114,7 +114,9 @@ impl IndexedBatchReader {
         }
     }
 
-    /// The highest committed batch index.
+    /// The highest committed batch index, or -1 if the queue is empty — or if
+    /// a header file it needs exists but cannot be read (a `read` of an index
+    /// in that file then returns `Err(Eio)`).
     pub fn last_index(&mut self) -> i64 {
         // SAFETY: The exclusive reader borrow excludes batch views while C searches header mappings.
         unsafe { ffi::mmapq_indexed_batch_reader_last_index(self.inner) }
