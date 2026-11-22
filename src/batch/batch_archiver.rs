@@ -71,6 +71,11 @@ impl IndexedBatchArchiver {
     /// start_index.
     ///
     /// **No-op** when `index == current start_index`.
+    ///
+    /// Returns `InvalidArgument` if `index` is outside `[0, 2^56 - 1]` or
+    /// if the queue is not archivable: it was created with
+    /// `archivable(false)`, and a queue keeps that setting when it is
+    /// reopened with `archivable(true)`. `archivable()` tells which.
     pub fn archive_up_to_index(&mut self, index: i64) -> Result<(), MmapError> {
         // SAFETY: The owned, thread-confined handle is exclusively borrowed.
         // Its retained read runtime stays alive during lazy initialization and mapping.
